@@ -1,3 +1,5 @@
+from io import StringIO
+
 from rich.console import Console
 
 from fakes import ScriptedClient
@@ -9,6 +11,13 @@ from radix.repl import Repl
 def make_assistant(results):
     client = ScriptedClient(results)
     return Assistant(client=client, agents=[Agent("coder")], permission_gate=AutoApproveGate())
+
+
+def make_repl():
+    assistant = make_assistant([])
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    return Repl(assistant, console=console), io
 
 
 def run_repl(assistant, inputs):
@@ -34,6 +43,37 @@ def test_repl_survives_errors():
     assistant = make_assistant([])
     assistant.coordinator.client = BrokenClient()
     run_repl(assistant, ["hello", "/exit"])
+
+
+def test_repl_renders_thinking_tool_subagent_and_answer():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_start("coordinator")
+    ev.on_stop("coordinator", 1.234, False)
+    ev.on_activity("coordinator", 'ask_coder {"task": "write hello"}')
+    ev.on_start("coder")
+    ev.on_delta("coder", "print('hi')")
+    ev.on_stop("coder", 2.0, True)
+    ev.on_start("coordinator")
+    ev.on_delta("coordinator", "**done**")
+    ev.on_stop("coordinator", 0.5, True)
+    out = io.getvalue()
+    assert "coordinator thought for 1.2s" in out
+    assert "• coordinator: ask_coder" in out
+    assert "print('hi')" in out
+    assert "2.0s" in out
+    assert "done" in out
+
+
+def test_repl_shows_subagent_tool_calls():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_start("coder")
+    ev.on_stop("coder", 0.1, False)
+    ev.on_activity("coder", 'read_file {"path": "main.py"}')
+    out = io.getvalue()
+    assert "coder thought for 0.1s" in out
+    assert "• coder: read_file" in out
 
 
 def test_repl_eof_exits():

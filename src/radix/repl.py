@@ -7,7 +7,11 @@ from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
 from rich.live import Live
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.spinner import Spinner
 from rich.text import Text
+
+from .events import Events
 
 if TYPE_CHECKING:
     from .assistant import Assistant
@@ -19,7 +23,11 @@ HELP_TEXT = """commands:
 
 
 class Repl:
-    """Minimalist CLI REPL: streamed answers rendered as markdown."""
+    """Minimalist CLI REPL.
+
+    Shows everything that happens: thinking spinners with elapsed time for
+    the coordinator and sub-agents, every tool call, and sub-agent answers.
+    """
 
     def __init__(self, assistant: Assistant, *, console: Console | None = None) -> None:
         self.assistant = assistant
@@ -27,6 +35,13 @@ class Repl:
         self._session: PromptSession[str] = PromptSession(history=InMemoryHistory())
         self._live: Live | None = None
         self._buffer = ""
+        self._agent: str | None = None
+        self.events = Events(
+            on_start=self._on_start,
+            on_delta=self._on_delta,
+            on_activity=self._on_activity,
+            on_stop=self._on_stop,
+        )
 
     def run(self) -> None:
         self.console.print("[bold]Radix[/bold] — type /help for help, Ctrl+D to exit")
@@ -45,15 +60,15 @@ class Repl:
                     break
                 continue
             try:
-                self.assistant.chat(text, on_delta=self._on_delta, on_activity=self._on_activity)
+                self.assistant.chat(text, events=self.events)
             except KeyboardInterrupt:
-                self._flush_stream()
+                self._cleanup_stream()
                 self.console.print("[dim]interrupted[/dim]")
             except Exception as exc:
-                self._flush_stream()
+                self._cleanup_stream()
                 self.console.print(f"[red]error:[/red] {exc}")
             else:
-                self._flush_stream(markdown=True)
+                self._cleanup_stream()
             self.console.print()
 
     def _command(self, text: str) -> bool:
@@ -69,28 +84,62 @@ class Repl:
             self.console.print(f"[dim]unknown command: {command} — try /help[/dim]")
         return False
 
-    def _on_delta(self, delta: str) -> None:
+    def _is_root(self) -> bool:
+        return self._agent == self.assistant.coordinator.name
+
+    def _on_start(self, name: str) -> None:
+        self._cleanup_stream()
+        self._agent = name
+        self._live = Live(
+            Spinner("dots", text=Text(f"{name} is thinking", style="dim")),
+            console=self.console,
+            refresh_per_second=10,
+            vertical_overflow="visible",
+        )
+        self._live.start()
+
+    def _on_delta(self, name: str, delta: str) -> None:
+        if self._agent != name:
+            self._on_start(name)
         self._buffer += delta
-        if self._live is None:
-            self._live = Live(
-                Text(""), console=self.console, refresh_per_second=15, vertical_overflow="visible"
+        style = None if self._is_root() else "dim"
+        self._live.update(Text(self._buffer, style=style))
+
+    def _on_activity(self, name: str, text: str) -> None:
+        self._cleanup_stream()
+        self.console.print(f"[dim]• {name}: {text}[/dim]")
+
+    def _on_stop(self, name: str, elapsed: float, produced_text: bool) -> None:
+        if self._agent != name or self._live is None:
+            return
+        content = self._buffer.strip()
+        if not produced_text or not content:
+            self._live.update(Text(f"• {name} thought for {elapsed:.1f}s", style="dim"))
+            self._live.stop()
+            self._live = None
+            self._buffer = ""
+            return
+        if self._is_root():
+            self._live.update(Markdown(content))
+        else:
+            self._live.update(
+                Panel(
+                    Markdown(content),
+                    title=name,
+                    subtitle=f"{elapsed:.1f}s",
+                    border_style="dim",
+                    expand=False,
+                )
             )
-            self._live.start()
-        self._live.update(Text(self._buffer))
+        self._live.stop()
+        self._live = None
+        self._buffer = ""
 
-    def _on_activity(self, text: str) -> None:
-        self._flush_stream()
-        self.console.print(f"[dim]• {text}[/dim]")
-
-    def _flush_stream(self, markdown: bool = False) -> None:
+    def _cleanup_stream(self) -> None:
         if self._live is not None:
             content = self._buffer.strip()
-            if content and markdown:
-                self._live.update(Markdown(content))
-            elif content:
-                self._live.update(Text(content))
-            else:
-                self._live.update(Text(""))
+            self._live.update(Text(content) if content else Text(""))
             self._live.stop()
             self._live = None
         self._buffer = ""
+        self._agent = None

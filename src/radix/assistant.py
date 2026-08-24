@@ -1,16 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 from .agent import Agent
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
 from .context import ContextManager
 from .coordinator import Coordinator
+from .events import Events
 from .permissions import CliPermissionGate, PermissionGate
 from .tool import Tool
-
-if TYPE_CHECKING:
-    from collections.abc import Callable
 
 
 class Assistant:
@@ -64,14 +60,8 @@ class Assistant:
             agent.context = self.context
         agent.permission_gate = self.permission_gate
 
-    def chat(
-        self,
-        text: str,
-        *,
-        on_delta: Callable[[str], None] | None = None,
-        on_activity: Callable[[str], None] | None = None,
-    ) -> str:
-        return self.coordinator.run(text, on_delta=on_delta, on_activity=on_activity)
+    def chat(self, text: str, *, events: Events | None = None) -> str:
+        return self.coordinator.run(text, events=events)
 
     def reset(self) -> None:
         self.coordinator.reset()

@@ -18,9 +18,10 @@ def _safe_name(name: str) -> str:
     return re.sub(r"\W+", "_", name).strip("_") or "agent"
 
 
-def delegation_tool(agent: Agent) -> Tool:
+def delegation_tool(agent: Agent, parent: Agent | None = None) -> Tool:
     def ask(task: str) -> str:
-        return agent.run(task)
+        events = parent._events if parent is not None else None
+        return agent.run(task, events=events)
 
     return Tool(
         name=f"ask_{_safe_name(agent.name)}",
@@ -68,7 +69,7 @@ class Coordinator(Agent):
             name=name,
             description=description,
             system_prompt=system_prompt or DEFAULT_COORDINATOR_PROMPT,
-            tools=[delegation_tool(a) for a in self.agents] + list(tools or []),
+            tools=[delegation_tool(a, parent=self) for a in self.agents] + list(tools or []),
             stateful=True,
             **kwargs,
         )

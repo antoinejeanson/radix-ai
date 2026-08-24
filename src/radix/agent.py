@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import time
 from typing import TYPE_CHECKING, Any
 
+from .events import Events
 from .messages import (
+    ChatResult,
     Message,
     ToolCall,
     assistant_message,
@@ -69,17 +71,12 @@ class Agent:
         self.stateful = stateful
         self.history: list[Message] = []
         self._tools_by_name = {t.name: t for t in self.tools}
+        self._events: Events | None = None
 
     def reset(self) -> None:
         self.history.clear()
 
-    def run(
-        self,
-        task: str,
-        *,
-        on_delta: Callable[[str], None] | None = None,
-        on_activity: Callable[[str], None] | None = None,
-    ) -> str:
+    def run(self, task: str, *, events: Events | None = None) -> str:
         if self.client is None:
             raise RuntimeError(
                 f"agent '{self.name}' has no client; pass it to an Assistant or set agent.client"
@@ -91,45 +88,52 @@ class Agent:
             working.extend(self.history)
         working.append(user_message(task))
 
-        answer = self._loop(working, on_delta=on_delta, on_activity=on_activity)
+        self._events = events
+        try:
+            answer = self._loop(working, events)
+        finally:
+            self._events = None
 
         if self.stateful:
             self.history.append(user_message(task))
             self.history.append(assistant_message(answer))
         return answer
 
-    def _loop(
-        self,
-        messages: list[Message],
-        *,
-        on_delta: Callable[[str], None] | None,
-        on_activity: Callable[[str], None] | None,
-    ) -> str:
+    def _chat_round(
+        self, messages: list[Message], tools: list[dict[str, Any]] | None, events: Events | None
+    ) -> ChatResult:
+        if events and events.on_start:
+            events.on_start(self.name)
+        started = time.monotonic()
+        produced_text = False
+        stream = self.client.chat_stream(messages, tools=tools)
+        for delta in stream:
+            produced_text = True
+            if events and events.on_delta:
+                events.on_delta(self.name, delta)
+        result = stream.result
+        if events and events.on_stop:
+            events.on_stop(self.name, time.monotonic() - started, produced_text)
+        return result
+
+    def _loop(self, messages: list[Message], events: Events | None) -> str:
         tool_schemas = [t.schema() for t in self.tools] or None
         for _ in range(self.max_tool_rounds):
             prepared = self.context.prepare(messages) if self.context else messages
-            stream = self.client.chat_stream(prepared, tools=tool_schemas)
-            for delta in stream:
-                if on_delta:
-                    on_delta(delta)
-            result = stream.result
+            result = self._chat_round(prepared, tool_schemas, events)
             if not result.tool_calls:
                 return result.content
             messages.append(assistant_tool_call_message(result.content, result.tool_calls))
             for call in result.tool_calls:
-                if on_activity:
-                    on_activity(_describe_call(call))
+                if events and events.on_activity:
+                    events.on_activity(self.name, _describe_call(call))
                 output = self._execute(call)
                 messages.append(tool_message(call.id, output))
 
         messages.append(
             user_message("You have used all your tool rounds. Give your final answer now, without calling any tools.")
         )
-        stream = self.client.chat_stream(messages, tools=None)
-        for delta in stream:
-            if on_delta:
-                on_delta(delta)
-        return stream.result.content
+        return self._chat_round(messages, None, events).content
 
     def _execute(self, call: ToolCall) -> str:
         tool = self._tools_by_name.get(call.name)

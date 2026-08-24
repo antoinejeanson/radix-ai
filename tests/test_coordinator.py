@@ -1,7 +1,7 @@
 import pytest
 
 from fakes import ScriptedClient
-from radix import Agent, AutoApproveGate, Coordinator
+from radix import Agent, AutoApproveGate, Coordinator, Events
 from radix.messages import ChatResult, ToolCall
 
 
@@ -70,6 +70,29 @@ def test_history_only_user_and_final_answer():
 
     coordinator.reset()
     assert coordinator.history == []
+
+
+def test_events_propagate_from_subagent():
+    coordinator, _, _ = make_setup(
+        [
+            ChatResult(
+                tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')]
+            ),
+            ChatResult(content="sub answer"),
+            ChatResult(content="final answer"),
+        ]
+    )
+    starts: list[str] = []
+    deltas: list[tuple[str, str]] = []
+    events = Events(
+        on_start=starts.append,
+        on_delta=lambda name, text: deltas.append((name, text)),
+    )
+    coordinator.run("do the thing", events=events)
+    assert starts == ["coordinator", "coder", "coordinator"]
+    assert ("coder", "sub answer") in deltas
+    assert ("coordinator", "final answer") in deltas
+    assert coordinator._events is None
 
 
 def test_history_sent_on_second_turn():
