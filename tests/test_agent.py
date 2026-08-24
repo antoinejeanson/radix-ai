@@ -1,0 +1,139 @@
+import pytest
+
+from fakes import ScriptedClient
+from radix import Agent, AutoApproveGate, DenyGate, tool
+from radix.messages import ChatResult, ToolCall
+
+
+@tool
+def add(a: int, b: int) -> str:
+    """Add two numbers."""
+    return str(a + b)
+
+
+@tool(sensitive=True)
+def shell(command: str) -> str:
+    """Run a command."""
+    return f"ran: {command}"
+
+
+def make_agent(results, tools=None, **kwargs):
+    client = ScriptedClient(results)
+    agent = Agent("tester", system_prompt="be brief", tools=tools or [add], client=client, **kwargs)
+    return agent, client
+
+
+def test_plain_answer():
+    agent, client = make_agent([ChatResult(content="2+2=4")])
+    assert agent.run("what is 2+2?") == "2+2=4"
+    messages = client.stream_calls[0]["messages"]
+    assert messages[0] == {"role": "system", "content": "be brief"}
+    assert messages[1] == {"role": "user", "content": "what is 2+2?"}
+
+
+def test_tool_call_loop():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 2, "b": 3}')]),
+            ChatResult(content="5"),
+        ]
+    )
+    assert agent.run("add 2 and 3") == "5"
+    second = client.stream_calls[1]["messages"]
+    assert second[2]["role"] == "assistant"
+    assert second[2]["tool_calls"][0]["function"] == {
+        "name": "add",
+        "arguments": '{"a": 2, "b": 3}',
+    }
+    assert second[3] == {"role": "tool", "tool_call_id": "c1", "content": "5"}
+
+
+def test_activity_and_delta_callbacks():
+    agent, _ = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')]),
+            ChatResult(content="done"),
+        ]
+    )
+    deltas: list[str] = []
+    activity: list[str] = []
+    agent.run("go", on_delta=deltas.append, on_activity=activity.append)
+    assert deltas == ["done"]
+    assert activity == ["add {\"a\": 1, \"b\": 1}"]
+
+
+def test_unknown_tool():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="nope", raw_arguments="{}")]),
+            ChatResult(content="sorry"),
+        ]
+    )
+    assert agent.run("x") == "sorry"
+    tool_msg = client.stream_calls[1]["messages"][3]
+    assert "unknown tool 'nope'" in tool_msg["content"]
+
+
+def test_invalid_json_arguments():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments="not json")]),
+            ChatResult(content="fixed"),
+        ]
+    )
+    assert agent.run("x") == "fixed"
+    assert "not valid JSON" in client.stream_calls[1]["messages"][3]["content"]
+
+
+def test_bad_arguments_type():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": "x"}')]),
+            ChatResult(content="fixed"),
+        ]
+    )
+    assert agent.run("x") == "fixed"
+    assert "invalid arguments" in client.stream_calls[1]["messages"][3]["content"]
+
+
+def test_permission_denied_is_reported_to_model():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(content="ok"),
+        ],
+        tools=[shell],
+        permission_gate=DenyGate(),
+    )
+    assert agent.run("list files") == "ok"
+    assert "Permission denied" in client.stream_calls[1]["messages"][3]["content"]
+
+
+def test_sensitive_tool_runs_when_approved():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(content="done"),
+        ],
+        tools=[shell],
+        permission_gate=AutoApproveGate(),
+    )
+    assert agent.run("list files") == "done"
+    assert client.stream_calls[1]["messages"][3]["content"] == "ran: ls"
+
+
+def test_max_tool_rounds_forces_final_answer():
+    loop_result = ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')])
+    agent, client = make_agent(
+        [loop_result, loop_result, ChatResult(content="final")], max_tool_rounds=2
+    )
+    assert agent.run("loop forever") == "final"
+    last = client.stream_calls[-1]
+    assert last["tools"] is None
+    assert "final answer" in last["messages"][-1]["content"]
+
+
+def test_run_without_client_raises():
+    agent = Agent("lonely")
+    with pytest.raises(RuntimeError, match="no client"):
+        agent.run("hello")
