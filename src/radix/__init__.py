@@ -5,7 +5,7 @@ from .assistant import Assistant
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
 from .coordinator import Coordinator
 from .events import Events
-from .messages import ChatResult, Message, ToolCall
+from .messages import ChatResult, Message, ToolCall, Usage
 from .permissions import AutoApproveGate, CliPermissionGate, DenyGate, PermissionGate
 from .tool import Tool, tool
 
@@ -28,5 +28,6 @@ __all__ = [
     "PermissionGate",
     "Tool",
     "ToolCall",
+    "Usage",
     "tool",
 ]

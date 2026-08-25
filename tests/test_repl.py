@@ -1,9 +1,10 @@
+import time
 from io import StringIO
 
 from rich.console import Console
 
 from fakes import ScriptedClient
-from radix import Agent, Assistant, AutoApproveGate
+from radix import Agent, Assistant, AutoApproveGate, Usage
 from radix.messages import ChatResult
 from radix.repl import Repl
 
@@ -61,8 +62,39 @@ def test_repl_renders_thinking_tool_subagent_and_answer():
     assert "coordinator thought for 1.2s" in out
     assert "• coordinator: ask_coder" in out
     assert "print('hi')" in out
-    assert "2.0s" in out
+    assert "0.0s · ~3 tok" in out
     assert "done" in out
+
+
+def test_repl_subagent_panel_shows_total_time_and_reported_tokens():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_activity("coordinator", 'ask_coder {"task": "t"}')
+    repl._run_start["coder"] = time.monotonic() - 5.0
+    ev.on_start("coder")
+    ev.on_delta("coder", "result")
+    ev.on_stop("coder", 0.1, True, Usage(prompt_tokens=40, completion_tokens=10, total_tokens=50))
+    out = io.getvalue()
+    assert "5.0s" in out
+    assert "· 50 tok" in out
+    assert "~" not in out
+
+
+def test_repl_resets_subagent_stats_between_delegations():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_activity("coordinator", 'ask_coder {"task": "t"}')
+    ev.on_start("coder")
+    ev.on_delta("coder", "first")
+    ev.on_stop("coder", 0.1, True, Usage(total_tokens=50))
+    ev.on_activity("coordinator", 'ask_coder {"task": "t2"}')
+    ev.on_start("coder")
+    ev.on_delta("coder", "second")
+    ev.on_stop("coder", 0.1, True, Usage(total_tokens=30))
+    out = io.getvalue()
+    assert "· 50 tok" in out
+    assert "· 30 tok" in out
+    assert "· 80 tok" not in out
 
 
 def test_repl_shows_subagent_tool_calls():

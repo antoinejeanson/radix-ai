@@ -113,7 +113,7 @@ class Agent:
                 events.on_delta(self.name, delta)
         result = stream.result
         if events and events.on_stop:
-            events.on_stop(self.name, time.monotonic() - started, produced_text)
+            events.on_stop(self.name, time.monotonic() - started, produced_text, result.usage)
         return result
 
     def _loop(self, messages: list[Message], events: Events | None) -> str:

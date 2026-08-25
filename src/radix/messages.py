@@ -14,9 +14,19 @@ class ToolCall:
 
 
 @dataclass
+class Usage:
+    """Token accounting for one completion, as reported by the server."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    total_tokens: int = 0
+
+
+@dataclass
 class ChatResult:
     content: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    usage: Usage | None = None
 
 
 def system_message(content: str) -> Message:

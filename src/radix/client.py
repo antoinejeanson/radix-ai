@@ -3,13 +3,31 @@ from __future__ import annotations
 from collections.abc import Iterator
 from typing import Any
 
-from openai import OpenAI
+from openai import APIStatusError, OpenAI
 
-from .messages import ChatResult, Message, ToolCall
+from .messages import ChatResult, Message, ToolCall, Usage
 
 DEFAULT_BASE_URL = "http://localhost:8080/v1"
 DEFAULT_API_KEY = "radix"
 DEFAULT_MODEL = "radix"
+
+
+def _to_usage(raw: Any) -> Usage | None:
+    if raw is None:
+        return None
+    if isinstance(raw, dict):
+        prompt = raw.get("prompt_tokens", 0)
+        completion = raw.get("completion_tokens", 0)
+        total = raw.get("total_tokens", 0)
+    else:
+        prompt = getattr(raw, "prompt_tokens", 0)
+        completion = getattr(raw, "completion_tokens", 0)
+        total = getattr(raw, "total_tokens", 0)
+    return Usage(
+        prompt_tokens=int(prompt or 0),
+        completion_tokens=int(completion or 0),
+        total_tokens=int(total or 0),
+    )
 
 
 class ChatStream:
@@ -33,19 +51,33 @@ class ChatStream:
         self._tools = tools
         self._result: ChatResult | None = None
 
+    def _open(self, kwargs: dict[str, Any]) -> Iterator[Any]:
+        try:
+            return self._api.chat.completions.create(**kwargs)
+        except APIStatusError as exc:
+            if exc.status_code == 400 and "stream_options" in str(exc):
+                kwargs.pop("stream_options", None)
+                return self._api.chat.completions.create(**kwargs)
+            raise
+
     def __iter__(self) -> Iterator[str]:
         kwargs: dict[str, Any] = {
             "model": self._model,
             "messages": self._messages,
             "stream": True,
+            "stream_options": {"include_usage": True},
         }
         if self._tools:
             kwargs["tools"] = self._tools
 
         content_parts: list[str] = []
         call_slots: dict[int, dict[str, str]] = {}
+        raw_usage: Any = None
 
-        for chunk in self._api.chat.completions.create(**kwargs):
+        for chunk in self._open(kwargs):
+            chunk_usage = getattr(chunk, "usage", None)
+            if chunk_usage is not None:
+                raw_usage = chunk_usage
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -73,7 +105,9 @@ class ChatStream:
             for index, slot in sorted(call_slots.items())
             if slot["name"]
         ]
-        self._result = ChatResult(content="".join(content_parts), tool_calls=tool_calls)
+        self._result = ChatResult(
+            content="".join(content_parts), tool_calls=tool_calls, usage=_to_usage(raw_usage)
+        )
 
     @property
     def result(self) -> ChatResult:
@@ -117,7 +151,11 @@ class Client:
             )
             for tc in (message.tool_calls or [])
         ]
-        return ChatResult(content=message.content or "", tool_calls=tool_calls)
+        return ChatResult(
+            content=message.content or "",
+            tool_calls=tool_calls,
+            usage=_to_usage(getattr(response, "usage", None)),
+        )
 
     def chat_stream(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None

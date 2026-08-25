@@ -1,7 +1,7 @@
 import pytest
 
 from fakes import ScriptedClient
-from radix import Agent, AutoApproveGate, DenyGate, Events, tool
+from radix import Agent, AutoApproveGate, DenyGate, Events, Usage, tool
 from radix.messages import ChatResult, ToolCall
 
 
@@ -49,30 +49,31 @@ def test_tool_call_loop():
 
 
 def test_events_callbacks():
+    usage = Usage(prompt_tokens=5, completion_tokens=2, total_tokens=7)
     agent, _ = make_agent(
         [
             ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')]),
-            ChatResult(content="done"),
+            ChatResult(content="done", usage=usage),
         ]
     )
     starts: list[str] = []
     deltas: list[tuple[str, str]] = []
     activity: list[tuple[str, str]] = []
     outputs: list[tuple[str, str, str]] = []
-    stops: list[tuple[str, bool]] = []
+    stops: list[tuple[str, bool, Usage | None]] = []
     events = Events(
         on_start=starts.append,
         on_delta=lambda name, text: deltas.append((name, text)),
         on_activity=lambda name, text: activity.append((name, text)),
         on_tool_output=lambda name, tool_name, output: outputs.append((name, tool_name, output)),
-        on_stop=lambda name, elapsed, produced: stops.append((name, produced)),
+        on_stop=lambda name, elapsed, produced, usage: stops.append((name, produced, usage)),
     )
     agent.run("go", events=events)
     assert starts == ["tester", "tester"]
     assert deltas == [("tester", "done")]
     assert activity == [("tester", 'add {"a": 1, "b": 1}')]
     assert outputs == [("tester", "add", "2")]
-    assert stops == [("tester", False), ("tester", True)]
+    assert stops == [("tester", False, None), ("tester", True, usage)]
     assert agent._events is None
 
 

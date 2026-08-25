@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from typing import TYPE_CHECKING
 
 from prompt_toolkit import PromptSession
@@ -11,10 +12,12 @@ from rich.panel import Panel
 from rich.spinner import Spinner
 from rich.text import Text
 
+from .context import estimate_tokens
 from .events import Events
 
 if TYPE_CHECKING:
     from .assistant import Assistant
+    from .messages import Usage
 
 HELP_TEXT = """commands:
   /help   show this help
@@ -41,12 +44,17 @@ def _diff_text(output: str) -> Text:
     return text
 
 
+def _format_tokens(n: int) -> str:
+    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
+
+
 class Repl:
     """Minimalist CLI REPL.
 
     Shows everything that happens: thinking spinners with elapsed time for
     the coordinator and sub-agents, every tool call and its output (edits
-    as colored diffs), and sub-agent answers.
+    as colored diffs), and sub-agent answers with their total call time and
+    token use.
     """
 
     def __init__(self, assistant: Assistant, *, console: Console | None = None) -> None:
@@ -56,6 +64,9 @@ class Repl:
         self._live: Live | None = None
         self._buffer = ""
         self._agent: str | None = None
+        self._run_start: dict[str, float] = {}
+        self._tokens: dict[str, int] = {}
+        self._estimated: dict[str, bool] = {}
         self.events = Events(
             on_start=self._on_start,
             on_delta=self._on_delta,
@@ -128,6 +139,13 @@ class Repl:
 
     def _on_activity(self, name: str, text: str) -> None:
         self._cleanup_stream()
+        if name == self.assistant.coordinator.name:
+            tool_name = text.split()[0].split("{")[0] if text.split() else ""
+            if tool_name.startswith("ask_"):
+                target = tool_name[4:]
+                self._run_start[target] = time.monotonic()
+                self._tokens.pop(target, None)
+                self._estimated.pop(target, None)
         self.console.print(f"[dim]• {name}: {text}[/dim]")
 
     def _on_tool_output(self, name: str, tool_name: str, output: str) -> None:
@@ -143,10 +161,17 @@ class Repl:
         else:
             self.console.print(Text(capped, style="dim"))
 
-    def _on_stop(self, name: str, elapsed: float, produced_text: bool) -> None:
+    def _on_stop(
+        self, name: str, elapsed: float, produced_text: bool, usage: "Usage | None" = None
+    ) -> None:
         if self._agent != name or self._live is None:
             return
         content = self._buffer.strip()
+        if usage is not None:
+            self._tokens[name] = self._tokens.get(name, 0) + usage.total_tokens
+        elif content:
+            self._tokens[name] = self._tokens.get(name, 0) + estimate_tokens(content)
+            self._estimated[name] = True
         if not produced_text or not content:
             self._live.update(Text(f"• {name} thought for {elapsed:.1f}s", style="dim"))
             self._live.stop()
@@ -156,11 +181,17 @@ class Repl:
         if self._is_root():
             self._live.update(Markdown(content))
         else:
+            total = time.monotonic() - self._run_start.get(name, time.monotonic() - elapsed)
+            subtitle = f"{total:.1f}s"
+            tokens = self._tokens.get(name, 0)
+            if tokens:
+                prefix = "~" if self._estimated.get(name) else ""
+                subtitle += f" · {prefix}{_format_tokens(tokens)} tok"
             self._live.update(
                 Panel(
                     Markdown(content),
                     title=name,
-                    subtitle=f"{elapsed:.1f}s",
+                    subtitle=subtitle,
                     border_style="dim",
                     expand=False,
                 )

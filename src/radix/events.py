@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .messages import Usage
 
 
 @dataclass
@@ -12,7 +16,9 @@ class Events:
     on_delta(agent_name, text): a chunk of streamed text arrived.
     on_activity(agent_name, description): a tool call is about to run.
     on_tool_output(agent_name, tool_name, output): a tool finished running.
-    on_stop(agent_name, elapsed_seconds, produced_text): a model round ended.
+    on_stop(agent_name, elapsed_seconds, produced_text, usage): a model round
+        ended; `usage` is the token accounting for the round, when the server
+        reports one.
 
     Events from sub-agents carry the sub-agent's name, so hosts can tell
     coordinator and sub-agent output apart.
@@ -22,4 +28,4 @@ class Events:
     on_delta: Callable[[str, str], None] | None = None
     on_activity: Callable[[str, str], None] | None = None
     on_tool_output: Callable[[str, str, str], None] | None = None
-    on_stop: Callable[[str, float, bool], None] | None = None
+    on_stop: Callable[[str, float, bool, "Usage | None"], None] | None = None
