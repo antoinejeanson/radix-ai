@@ -33,9 +33,21 @@ too. Every token is precious, every context window is sacred real estate — so
 Radix keeps contexts clean, shows you everything it does, and never touches
 your terminal or the Internet without asking first.
 
+## Why "Radix"?
+
+*Radix* is Latin for **root**.
+
+A Radix assistant grows like a root system: the coordinator is the taproot,
+and each sub-agent a branch root reaching into its own patch of soil — an
+isolated context, a set of specialized tools. And the tree growing out of
+those roots is *your* project, drawing up the nutrients — tokens, context,
+model horsepower — to do your actual work.
+
+Deep roots, small footprint. Just like the models we love.
+
 ---
 
-## Why Radix?
+## Features
 
 - **Assistant as code** — the whole assistant is defined in Python. What you see in the file *is* the assistant.
 - **Your workflow, your agents** — compose specialized agents and tools around how *you* work, then hand the result to anyone: it's one `uv run` away.
