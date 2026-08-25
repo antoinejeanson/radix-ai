@@ -21,12 +21,32 @@ HELP_TEXT = """commands:
   /reset  forget the conversation history
   /exit   quit (Ctrl+D also works)"""
 
+MAX_OUTPUT_LINES = 40
+
+
+def _diff_text(output: str) -> Text:
+    text = Text()
+    for line in output.splitlines():
+        if line.startswith(("---", "+++")):
+            text.append(line + "\n", style="bold")
+        elif line.startswith("@@"):
+            text.append(line + "\n", style="cyan")
+        elif line.startswith("-"):
+            text.append(line + "\n", style="red")
+        elif line.startswith("+"):
+            text.append(line + "\n", style="green")
+        else:
+            text.append(line + "\n", style="dim")
+    text.rstrip()
+    return text
+
 
 class Repl:
     """Minimalist CLI REPL.
 
     Shows everything that happens: thinking spinners with elapsed time for
-    the coordinator and sub-agents, every tool call, and sub-agent answers.
+    the coordinator and sub-agents, every tool call and its output (edits
+    as colored diffs), and sub-agent answers.
     """
 
     def __init__(self, assistant: Assistant, *, console: Console | None = None) -> None:
@@ -40,6 +60,7 @@ class Repl:
             on_start=self._on_start,
             on_delta=self._on_delta,
             on_activity=self._on_activity,
+            on_tool_output=self._on_tool_output,
             on_stop=self._on_stop,
         )
 
@@ -108,6 +129,19 @@ class Repl:
     def _on_activity(self, name: str, text: str) -> None:
         self._cleanup_stream()
         self.console.print(f"[dim]• {name}: {text}[/dim]")
+
+    def _on_tool_output(self, name: str, tool_name: str, output: str) -> None:
+        self._cleanup_stream()
+        if tool_name.startswith("ask_"):
+            return
+        lines = output.splitlines()
+        capped = "\n".join(lines[:MAX_OUTPUT_LINES])
+        if len(lines) > MAX_OUTPUT_LINES:
+            capped += "\n[dim]... [output truncated][/dim]"
+        if tool_name == "edit_file" and not output.startswith("Error"):
+            self.console.print(_diff_text(capped))
+        else:
+            self.console.print(Text(capped, style="dim"))
 
     def _on_stop(self, name: str, elapsed: float, produced_text: bool) -> None:
         if self._agent != name or self._live is None:

@@ -128,6 +128,8 @@ class Agent:
                 if events and events.on_activity:
                     events.on_activity(self.name, _describe_call(call))
                 output = self._execute(call)
+                if events and events.on_tool_output:
+                    events.on_tool_output(self.name, call.name, output)
                 messages.append(tool_message(call.id, output))
 
         messages.append(

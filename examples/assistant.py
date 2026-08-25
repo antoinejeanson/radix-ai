@@ -10,17 +10,18 @@ Then run this file:
 """
 
 from radix import Agent, Assistant
-from radix.builtin import fetch_url, read_file, run_shell
+from radix.builtin import edit_file, fetch_url, read_file, run_shell, write_file
 
 coder = Agent(
     name="coder",
     description="Writes, reviews and debugs code, and inspects the local machine.",
     system_prompt=(
-        "You are a concise senior software engineer. Solve the task step by step, "
-        "using read_file to inspect files and run_shell to run commands. "
+        "You are a concise senior software engineer. Solve the task step by step. "
+        "Use read_file to inspect files, edit_file to change existing files, "
+        "write_file to create new ones, and run_shell to run commands. "
         "Always explain what a command does before running it."
     ),
-    tools=[read_file, run_shell],
+    tools=[read_file, edit_file, write_file, run_shell],
 )
 
 researcher = Agent(

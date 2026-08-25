@@ -58,17 +58,20 @@ def test_events_callbacks():
     starts: list[str] = []
     deltas: list[tuple[str, str]] = []
     activity: list[tuple[str, str]] = []
+    outputs: list[tuple[str, str, str]] = []
     stops: list[tuple[str, bool]] = []
     events = Events(
         on_start=starts.append,
         on_delta=lambda name, text: deltas.append((name, text)),
         on_activity=lambda name, text: activity.append((name, text)),
+        on_tool_output=lambda name, tool_name, output: outputs.append((name, tool_name, output)),
         on_stop=lambda name, elapsed, produced: stops.append((name, produced)),
     )
     agent.run("go", events=events)
     assert starts == ["tester", "tester"]
     assert deltas == [("tester", "done")]
     assert activity == [("tester", 'add {"a": 1, "b": 1}')]
+    assert outputs == [("tester", "add", "2")]
     assert stops == [("tester", False), ("tester", True)]
     assert agent._events is None
 

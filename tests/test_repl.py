@@ -85,3 +85,51 @@ def test_repl_eof_exits():
     repl = Repl(assistant, console=console)
     repl._session = type("S", (), {"prompt": staticmethod(raise_eof)})()
     repl.run()
+
+
+def test_repl_renders_edit_diff():
+    repl, io = make_repl()
+    ev = repl.events
+    diff = (
+        "Edited /tmp/app.py.\n"
+        "--- a/app.py\n"
+        "+++ b/app.py\n"
+        "@@ -1,2 +1,2 @@\n"
+        " def greet():\n"
+        "-    print('hi')\n"
+        "+    print('hello')"
+    )
+    ev.on_activity("coder", 'edit_file {"path": "/tmp/app.py"}')
+    ev.on_tool_output("coder", "edit_file", diff)
+    out = io.getvalue()
+    assert "• coder: edit_file" in out
+    assert "--- a/app.py" in out
+    assert "-    print('hi')" in out
+    assert "+    print('hello')" in out
+
+
+def test_repl_renders_plain_tool_output_capped():
+    repl, io = make_repl()
+    ev = repl.events
+    output = "\n".join(f"line {i}" for i in range(60))
+    ev.on_tool_output("coder", "read_file", output)
+    out = io.getvalue()
+    assert "line 0" in out
+    assert "line 39" in out
+    assert "line 40" not in out
+    assert "[output truncated]" in out
+
+
+def test_repl_renders_edit_error_as_plain_output():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_tool_output("coder", "edit_file", "Error: old_string not found in /tmp/app.py.")
+    out = io.getvalue()
+    assert "old_string not found" in out
+
+
+def test_repl_hides_delegation_tool_output():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_tool_output("coordinator", "ask_coder", "the sub-agent's answer")
+    assert "the sub-agent's answer" not in io.getvalue()
