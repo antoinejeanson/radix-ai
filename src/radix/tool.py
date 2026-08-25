@@ -58,7 +58,7 @@ def schema_from_signature(fn: Callable[..., Any]) -> dict[str, Any]:
 class Tool:
     """A capability an agent can invoke.
 
-    `sensitive` tools (terminal, network, ...) always go through the
+    `ask_permission` tools (terminal, network, ...) always go through the
     permission gate before running.
     """
 
@@ -66,7 +66,7 @@ class Tool:
     description: str
     parameters: dict[str, Any]
     fn: Callable[..., Any]
-    sensitive: bool = False
+    ask_permission: bool = False
 
     def run(self, **kwargs: Any) -> str:
         result = self.fn(**kwargs)
@@ -88,7 +88,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
-    sensitive: bool = False,
+    ask_permission: bool = False,
 ) -> Tool | Callable[[Callable[..., Any]], Tool]:
     """Decorator turning a typed Python function into a Tool.
 
@@ -102,7 +102,7 @@ def tool(
             description=description or (inspect.getdoc(f) or ""),
             parameters=schema_from_signature(f),
             fn=f,
-            sensitive=sensitive,
+            ask_permission=ask_permission,
         )
 
     if fn is None:

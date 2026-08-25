@@ -11,7 +11,7 @@ def add(a: int, b: int) -> str:
     return str(a + b)
 
 
-@tool(sensitive=True)
+@tool(ask_permission=True)
 def shell(command: str) -> str:
     """Run a command."""
     return f"ran: {command}"
@@ -124,7 +124,7 @@ def test_permission_denied_is_reported_to_model():
     assert "Permission denied" in client.stream_calls[1]["messages"][3]["content"]
 
 
-def test_sensitive_tool_runs_when_approved():
+def test_ask_permission_tool_runs_when_approved():
     agent, client = make_agent(
         [
             ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),

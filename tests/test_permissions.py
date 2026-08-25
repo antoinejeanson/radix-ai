@@ -1,7 +1,7 @@
 from radix import AutoApproveGate, CliPermissionGate, DenyGate, tool
 
 
-@tool(sensitive=True)
+@tool(ask_permission=True)
 def dangerous(command: str) -> str:
     """Run something dangerous."""
     return command
@@ -9,19 +9,19 @@ def dangerous(command: str) -> str:
 
 @tool
 def harmless(text: str) -> str:
-    """Do nothing sensitive."""
+    """Do nothing that requires permission."""
     return text
 
 
-def test_cli_gate_auto_approves_non_sensitive():
+def test_cli_gate_auto_approves_non_ask_permission():
     def explode(prompt: str) -> str:
-        raise AssertionError("should not prompt for non-sensitive tools")
+        raise AssertionError("should not prompt for non-ask_permission tools")
 
     gate = CliPermissionGate(input_fn=explode)
     assert gate.check(harmless, {"text": "hi"}) is True
 
 
-def test_cli_gate_prompts_on_sensitive_yes():
+def test_cli_gate_prompts_on_ask_permission_yes():
     prompts: list[str] = []
     printed: list[str] = []
     gate = CliPermissionGate(
@@ -34,7 +34,7 @@ def test_cli_gate_prompts_on_sensitive_yes():
     assert any("ls" in line for line in printed)
 
 
-def test_cli_gate_prompts_on_sensitive_no():
+def test_cli_gate_prompts_on_ask_permission_no():
     gate = CliPermissionGate(input_fn=lambda p: "n", printer=lambda s: None)
     assert gate.check(dangerous, {"command": "ls"}) is False
     gate = CliPermissionGate(input_fn=lambda p: "", printer=lambda s: None)

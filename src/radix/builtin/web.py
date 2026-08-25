@@ -8,7 +8,7 @@ MAX_BODY_CHARS = 16000
 TIMEOUT_SECONDS = 30
 
 
-@tool(sensitive=True)
+@tool(ask_permission=True)
 def fetch_url(url: str) -> str:
     """Fetch a URL over HTTP(S) and return the response body as text."""
     request = urllib.request.Request(url, headers={"User-Agent": "radix"})

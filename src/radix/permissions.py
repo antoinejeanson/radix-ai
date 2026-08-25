@@ -20,7 +20,7 @@ class PermissionGate(Protocol):
 
 
 class CliPermissionGate:
-    """Default gate: prompts the user on every sensitive tool call."""
+    """Default gate: prompts the user on every tool call requiring permission."""
 
     def __init__(
         self,
@@ -32,9 +32,9 @@ class CliPermissionGate:
         self._print = printer
 
     def check(self, tool: Tool, arguments: dict[str, Any]) -> bool:
-        if not tool.sensitive:
+        if not tool.ask_permission:
             return True
-        self._print(f"! sensitive tool '{tool.name}' wants to run with arguments:")
+        self._print(f"! Permission request: '{tool.name}' wants to run with arguments:")
         self._print("  " + json.dumps(arguments, ensure_ascii=False, indent=2).replace("\n", "\n  "))
         answer = self._input("Allow this call? [y/N] ")
         return answer.strip().lower() in ("y", "yes")
