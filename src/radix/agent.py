@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from .context import ContextManager
 
 MAX_TOOL_OUTPUT_CHARS = 16000
+DEFAULT_MAX_DELEGATION_DEPTH = 2
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -36,6 +38,42 @@ def _describe_call(call: ToolCall) -> str:
     if len(args) > 120:
         args = args[:117] + "..."
     return f"{call.name} {args}".strip()
+
+
+def _safe_name(name: str) -> str:
+    return re.sub(r"\W+", "_", name).strip("_") or "agent"
+
+
+def delegation_tool(agent: Agent, parent: Agent) -> Tool:
+    """Build an `ask_<name>` tool that runs `agent` as a sub-agent of `parent`.
+
+    The child runs at `parent`'s depth + 1, so depth limits propagate down the
+    delegation chain. The parent's active events flow into the child, so a UI
+    sees everything the child does.
+    """
+
+    def ask(task: str) -> str:
+        events = parent._events
+        return agent.run(task, events=events, depth=parent._depth + 1)
+
+    return Tool(
+        name=f"ask_{_safe_name(agent.name)}",
+        description=(
+            f"Delegate a task to the '{agent.name}' sub-agent. {agent.description} "
+            "The sub-agent cannot see this conversation, so the task must be fully self-contained."
+        ).strip(),
+        parameters={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Self-contained description of the task to delegate.",
+                }
+            },
+            "required": ["task"],
+        },
+        fn=ask,
+    )
 
 
 class Agent:
@@ -54,29 +92,52 @@ class Agent:
         description: str = "",
         system_prompt: str = "",
         tools: list[Tool] | None = None,
+        subagents: list[Agent] | None = None,
         client: Client | None = None,
         context: ContextManager | None = None,
         permission_gate: PermissionGate | None = None,
-        max_tool_rounds: int = 8,
+max_tool_rounds: int = 8,
+        max_delegation_depth: int | None = None,
         stateful: bool = False,
     ) -> None:
         self.name = name
         self.description = description
         self.system_prompt = system_prompt
         self.tools = list(tools or [])
+        self.subagents = list(subagents or [])
+        names = [a.name for a in self.subagents]
+        if len(names) != len(set(names)):
+            raise ValueError("sub-agent names must be unique")
         self.client = client
         self.context = context
         self.permission_gate = permission_gate or CliPermissionGate()
         self.max_tool_rounds = max_tool_rounds
+        self.max_delegation_depth = (
+            max_delegation_depth
+            if max_delegation_depth is not None
+            else DEFAULT_MAX_DELEGATION_DEPTH
+        )
         self.stateful = stateful
         self.history: list[Message] = []
-        self._tools_by_name = {t.name: t for t in self.tools}
         self._events: Events | None = None
+        self._depth = 0
+        self._run_tools: list[Tool] = []
+        self._run_tools_by_name: dict[str, Tool] = {}
 
     def reset(self) -> None:
         self.history.clear()
 
-    def run(self, task: str, *, events: Events | None = None) -> str:
+    def delegation_tools(self, depth: int = 0) -> list[Tool]:
+        """The `ask_<name>` tools this agent may call at the given depth.
+
+        Agents at or past the maximum delegation depth get none, which bounds
+        recursion even when sub-agent graphs contain cycles.
+        """
+        if depth + 1 > self.max_delegation_depth:
+            return []
+        return [delegation_tool(child, self) for child in self.subagents]
+
+    def run(self, task: str, *, events: Events | None = None, depth: int = 0) -> str:
         if self.client is None:
             raise RuntimeError(
                 f"agent '{self.name}' has no client; pass it to an Assistant or set agent.client"
@@ -89,10 +150,16 @@ class Agent:
         working.append(user_message(task))
 
         self._events = events
+        self._depth = depth
+        self._run_tools = self.tools + self.delegation_tools(depth)
+        self._run_tools_by_name = {t.name: t for t in self._run_tools}
         try:
             answer = self._loop(working, events)
         finally:
             self._events = None
+            self._depth = 0
+            self._run_tools = []
+            self._run_tools_by_name = {}
 
         if self.stateful:
             self.history.append(user_message(task))
@@ -117,7 +184,7 @@ class Agent:
         return result
 
     def _loop(self, messages: list[Message], events: Events | None) -> str:
-        tool_schemas = [t.schema() for t in self.tools] or None
+        tool_schemas = [t.schema() for t in self._run_tools] or None
         for _ in range(self.max_tool_rounds):
             prepared = self.context.prepare(messages) if self.context else messages
             result = self._chat_round(prepared, tool_schemas, events)
@@ -138,9 +205,9 @@ class Agent:
         return self._chat_round(messages, None, events).content
 
     def _execute(self, call: ToolCall) -> str:
-        tool = self._tools_by_name.get(call.name)
+        tool = self._run_tools_by_name.get(call.name)
         if tool is None:
-            available = ", ".join(self._tools_by_name) or "(none)"
+            available = ", ".join(self._run_tools_by_name) or "(none)"
             return f"Error: unknown tool '{call.name}'. Available tools: {available}"
         try:
             arguments: Any = json.loads(call.raw_arguments) if call.raw_arguments.strip() else {}
