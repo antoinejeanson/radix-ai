@@ -34,11 +34,6 @@ researcher = Agent(
     tools=[fetch_url],
 )
 
-# Agents can call other agents: the coder hands off documentation questions
-# to the researcher, which may in turn delegate further. Depth is bounded by
-# Assistant(max_delegation_depth=...), so such cycles cannot run forever.
-coder.subagents = [researcher]
-
 assistant = Assistant(
     model="radix",  # llama.cpp accepts any name unless --alias is set
     base_url="http://localhost:8080/v1",  # llama.cpp default

@@ -18,9 +18,8 @@ def make_setup(results):
 
 def test_delegation_tools_generated():
     coordinator, _, _ = make_setup([])
-    delegation = coordinator.delegation_tools(0)
-    assert [t.name for t in delegation] == ["ask_coder"]
-    schema = delegation[0].schema()
+    assert [t.name for t in coordinator.tools] == ["ask_coder"]
+    schema = coordinator.tools[0].schema()
     assert schema["function"]["parameters"]["required"] == ["task"]
     assert "Writes code." in schema["function"]["description"]
     assert coordinator.stateful is True
@@ -106,57 +105,3 @@ def test_history_sent_on_second_turn():
     assert messages[1] == {"role": "user", "content": "hello"}
     assert messages[2] == {"role": "assistant", "content": "hi"}
     assert messages[3] == {"role": "user", "content": "goodbye"}
-
-
-def test_depth_limit_strips_delegation_tools():
-    helper = Agent("helper", description="Lends a hand.")
-    coder = Agent("coder", description="Writes code.", subagents=[helper])
-    coordinator = Coordinator(agents=[coder], client=ScriptedClient([]))
-    assert coordinator.max_delegation_depth == 2  # standalone default
-    assert coder.max_delegation_depth == 2
-    assert [t.name for t in coordinator.delegation_tools(0)] == ["ask_coder"]
-    assert [t.name for t in coder.delegation_tools(1)] == ["ask_helper"]
-    assert helper.delegation_tools(2) == []
-    assert coder.delegation_tools(99) == []
-
-
-def test_depth_limit_is_configurable():
-    helper = Agent("helper", description="Lends a hand.", max_delegation_depth=2)
-    coder = Agent("coder", description="Writes code.", subagents=[helper], max_delegation_depth=2)
-    coordinator = Coordinator(agents=[coder], client=ScriptedClient([]))
-    assert [t.name for t in coordinator.delegation_tools(0)] == ["ask_coder"]
-    assert [t.name for t in coder.delegation_tools(1)] == ["ask_helper"]
-    assert helper.delegation_tools(2) == []
-
-
-def test_nested_delegation_flow():
-    client = ScriptedClient(
-        [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t1"}')]),
-            ChatResult(tool_calls=[ToolCall(id="c2", name="ask_helper", raw_arguments='{"task": "t2"}')]),
-            ChatResult(content="helper reply"),
-            ChatResult(content="coder reply"),
-            ChatResult(content="final reply"),
-        ]
-    )
-    helper = Agent("helper", description="A helper.", client=client)
-    coder = Agent("coder", description="A coder.", subagents=[helper], client=client)
-    coordinator = Coordinator(
-        agents=[coder],
-        client=client,
-        permission_gate=AutoApproveGate(),
-    )
-    helper = Agent("helper", description="A helper.", client=client)
-    coder = Agent("coder", description="A coder.", subagents=[helper], client=client)
-    coordinator = Coordinator(
-        agents=[coder],
-        client=client,
-        permission_gate=AutoApproveGate(),
-    )
-    answer = coordinator.run("top")
-    assert answer == "final reply"
-    assert [c["messages"][-1].get("role") for c in client.stream_calls[:3]] == [
-        "user", "user", "user"
-    ]
-    assert client.stream_calls[3]["messages"][-1]["content"] == "helper reply"
-    assert client.stream_calls[4]["messages"][-1]["content"] == "coder reply"

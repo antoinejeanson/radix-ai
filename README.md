@@ -193,28 +193,6 @@ Sub-agents run with a fresh, isolated context every time, and only their
 final answer enters the coordinator's memory — that's how Radix keeps small
 context windows usable over long conversations.
 
-**Sub-agents can call sub-agents.** Any agent may carry its own `subagents`
-and get an `ask_<name>` tool for each — the coordinator is just the first
-agent in the chain. A `coder` agent can hand documentation questions to a
-`researcher` that delegates further down the line:
-
-```python
-research_helper = Agent(name="helper", ...)
-researcher = Agent(name="researcher", subagents=[research_helper], ...)
-coder = Agent(name="coder", ...)
-coder.subagents = [researcher]      # coder can call researcher
-
-assistant = Assistant(agents=[coder, researcher])
-```
-
-Mutual references (`coder` ↔ `researcher`) work too: assign `subagents`
-after construction, as above. Recursion can't run away —
-`Assistant(max_delegation_depth=2)` bounds how many levels of agents a single
-call may traverse (the coordinator is level 0); any agent already at the cap
-gets no delegation tools, so cycles terminate naturally. So by default, the
-coordinator can hand off to a sub-agent, that sub-agent can hand off to one
-more — but nothing deeper.
-
 But delegation is a tool in your toolbox, not a rule: plenty of assistants are
 one agent with a few tools, and that's exactly what Radix supports too.
 

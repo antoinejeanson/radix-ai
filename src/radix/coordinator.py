@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from .agent import Agent
 from .tool import Tool
 
@@ -12,14 +14,41 @@ When delegating, write a fully self-contained task description: sub-agents canno
 If you have no suitable tool or sub-agent for a request, say so honestly."""
 
 
+def _safe_name(name: str) -> str:
+    return re.sub(r"\W+", "_", name).strip("_") or "agent"
+
+
+def delegation_tool(agent: Agent, parent: Agent | None = None) -> Tool:
+    def ask(task: str) -> str:
+        events = parent._events if parent is not None else None
+        return agent.run(task, events=events)
+
+    return Tool(
+        name=f"ask_{_safe_name(agent.name)}",
+        description=(
+            f"Delegate a task to the '{agent.name}' sub-agent. {agent.description} "
+            "The sub-agent cannot see this conversation, so the task must be fully self-contained."
+        ).strip(),
+        parameters={
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Self-contained description of the task to delegate.",
+                }
+            },
+            "required": ["task"],
+        },
+        fn=ask,
+    )
+
+
 class Coordinator(Agent):
-    """The root agent the user talks to (a stateful Agent).
+    """The agent the user talks to.
 
     Every sub-agent is exposed as an `ask_<name>` tool, so delegation happens
     through ordinary tool calls. Sub-agents run with isolated context and only
-    their final answer enters the coordinator's conversation. Sub-agents may
-    carry their own sub-agents, down to the assistant-wide
-    `max_delegation_depth` (single source: `agent.DEFAULT_MAX_DELEGATION_DEPTH`).
+    their final answer enters the coordinator's conversation.
     """
 
     def __init__(
@@ -32,14 +61,15 @@ class Coordinator(Agent):
         tools: list[Tool] | None = None,
         **kwargs,
     ) -> None:
-        subagents = list(agents or [])
-        self.agents = subagents
+        self.agents = list(agents or [])
+        names = [a.name for a in self.agents]
+        if len(names) != len(set(names)):
+            raise ValueError("sub-agent names must be unique")
         super().__init__(
             name=name,
             description=description,
             system_prompt=system_prompt or DEFAULT_COORDINATOR_PROMPT,
-            subagents=subagents,
-            tools=list(tools or []),
+            tools=[delegation_tool(a, parent=self) for a in self.agents] + list(tools or []),
             stateful=True,
             **kwargs,
         )
