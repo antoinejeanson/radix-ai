@@ -7,6 +7,8 @@ from radix.messages import ChatResult, ToolCall
 from radix.undo import UndoLog
 
 
+# Tests for UndoLog and Assistant.undo: snapshots, file restore, history
+# rewind, and the reset flow.
 def test_undo_restores_edited_file(tmp_path):
     path = tmp_path / "app.py"
     path.write_text("before")

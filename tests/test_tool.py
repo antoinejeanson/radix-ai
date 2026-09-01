@@ -3,6 +3,7 @@ from typing import Optional
 from radix import Tool, tool
 
 
+# Tests for Tool and the @tool decorator (schema derivation).
 def test_tool_decorator_defaults():
     @tool
     def add(a: int, b: int) -> str:

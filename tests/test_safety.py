@@ -3,6 +3,7 @@ from radix import LlmSafetyChecker, tool
 from radix.messages import ChatResult
 
 
+# Tests for the LLM safety checker and verdict parsing.
 @tool
 def run(command: str) -> str:
     """Run a command."""

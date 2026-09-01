@@ -19,6 +19,8 @@ if TYPE_CHECKING:
     from .assistant import Assistant
     from .messages import Usage
 
+# Repl: the interactive CLI — prompt loop, slash commands (/help, /undo,
+# /exit), and live streaming views of everything the agents do.
 HELP_TEXT = """commands:
   /help   show this help
   /undo   revert the last turn: restore changed files, rewind the conversation
@@ -66,6 +68,16 @@ class Repl:
         max_output_lines: int = MAX_OUTPUT_LINES,
         console: Console | None = None,
     ) -> None:
+        """Create the REPL.
+
+        Args:
+            assistant: The Assistant to chat with; must already be fully
+                configured and bound.
+            max_output_lines: Most lines of tool output shown per tool call;
+                longer output is truncated with a marker.
+            console: Rich console to render on; a new one is created when
+                None.
+        """
         self.assistant = assistant
         self.max_output_lines = max_output_lines
         self.console = console or Console()
@@ -85,6 +97,11 @@ class Repl:
         )
 
     def run(self) -> None:
+        """Run the prompt loop until the user exits.
+
+        Accepts messages, slash commands (/help, /undo [N|all], /exit) and
+        Ctrl+D. Blocks, and returns when the user quits.
+        """
         self.console.print("[bold]Radix[/bold] — type /help for help, Ctrl+D to exit")
         while True:
             try:
@@ -113,6 +130,14 @@ class Repl:
             self.console.print()
 
     def _command(self, text: str) -> bool:
+        """Handle one slash command.
+
+        Args:
+            text: The full input line, starting with "/".
+
+        Returns:
+            True when the command quits the REPL, False otherwise.
+        """
         words = text.split()
         command = words[0]
         if command in ("/exit", "/quit"):
@@ -126,6 +151,11 @@ class Repl:
         return False
 
     def _undo(self, args: list[str]) -> None:
+        """Implement `/undo [N|all]`.
+
+        Args:
+            args: The words after "/undo".
+        """
         if not args:
             turns = 1
         elif args[0] == "all":
@@ -150,9 +180,19 @@ class Repl:
             self.console.print("[dim]nothing to undo[/dim]")
 
     def _is_root(self) -> bool:
+        """Whether the currently streaming agent is the coordinator.
+
+        Returns:
+            True when the active agent is the coordinator.
+        """
         return self._agent == self.assistant.coordinator.name
 
     def _on_start(self, name: str) -> None:
+        """Event: a model round begins for `name`; show a thinking spinner.
+
+        Args:
+            name: The agent starting to think.
+        """
         self._cleanup_stream()
         self._agent = name
         self._live = Live(
@@ -164,6 +204,12 @@ class Repl:
         self._live.start()
 
     def _on_delta(self, name: str, delta: str) -> None:
+        """Event: streamed text arrived; append it to the live view.
+
+        Args:
+            name: The agent producing the text.
+            delta: The new chunk of text.
+        """
         if self._agent != name:
             self._on_start(name)
         self._buffer += delta
@@ -171,6 +217,13 @@ class Repl:
         self._live.update(Text(self._buffer, style=style))
 
     def _on_activity(self, name: str, text: str) -> None:
+        """Event: a tool call is about to run; print it, and start the
+        stopwatch when a sub-agent is being delegated to.
+
+        Args:
+            name: The agent calling the tool.
+            text: One-line description of the call.
+        """
         self._cleanup_stream()
         if name == self.assistant.coordinator.name:
             tool_name = text.split()[0].split("{")[0] if text.split() else ""
@@ -182,6 +235,14 @@ class Repl:
         self.console.print(f"[dim]• {name}: {text}[/dim]")
 
     def _on_tool_output(self, name: str, tool_name: str, output: str) -> None:
+        """Event: a tool finished; print its output, capped and styled
+        (diffs in color for edit_file).
+
+        Args:
+            name: The agent that ran the tool.
+            tool_name: The tool's name.
+            output: The tool's output text.
+        """
         self._cleanup_stream()
         if tool_name.startswith("ask_"):
             return
@@ -201,6 +262,15 @@ class Repl:
         produced_text: bool,
         usage: "Usage | None" = None,
     ) -> None:
+        """Event: a model round ended; render the final answer (markdown
+        for the coordinator, a panel with time/tokens for sub-agents).
+
+        Args:
+            name: The agent that finished.
+            elapsed: Duration of the round in seconds.
+            produced_text: Whether any text streamed during the round.
+            usage: Token accounting from the server, when reported.
+        """
         if self._agent != name or self._live is None:
             return
         content = self._buffer.strip()
@@ -240,6 +310,8 @@ class Repl:
         self._buffer = ""
 
     def _cleanup_stream(self) -> None:
+        """Stop the live view and reset the stream state (also used to
+        recover from interrupts)."""
         if self._live is not None:
             content = self._buffer.strip()
             self._live.update(Text(content) if content else Text(""))

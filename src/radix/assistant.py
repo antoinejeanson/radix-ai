@@ -20,6 +20,8 @@ from .tool import Tool
 from .undo import UndoLog, UndoResult
 
 
+# Assistant: the top-level "assistant as code" object; wires the model
+# client, context manager, undo log, coordinator and its sub-agents.
 class Assistant:
     """Your Radix assistant: assistant as code.
 
@@ -54,6 +56,52 @@ class Assistant:
         tool_gates: dict[str, PermissionGate] | None = None,
         client: Client | None = None,
     ) -> None:
+        """Create the assistant: model client, context manager, undo log,
+        coordinator and its sub-agents.
+
+        Args:
+            model: Model id sent to the API; the default "radix" matches a
+                llama.cpp server loaded with any model.
+            base_url: OpenAI-compatible endpoint; the default is a local
+                llama-server (`http://localhost:8080/v1`).
+            api_key: Key for the endpoint. llama.cpp accepts anything;
+                hosted APIs require a real one.
+            agents: Sub-agents the coordinator can delegate to; each becomes
+                an `ask_<name>` tool. Sub-agent names must be unique.
+            tools: Tools the coordinator may call directly. Sub-agents only
+                have access to their own tools.
+            system_prompt: Coordinator system prompt; defaults to
+                DEFAULT_COORDINATOR_PROMPT when None.
+            max_context_tokens: Token budget for the conversation. Messages
+                are re-attempted against this budget, and when the
+                conversation exceeds budget - reserve_output_tokens the
+                oldest messages are summarized.
+            reserve_output_tokens: Tokens reserved for the model's answer;
+                the conversation budget is
+                max_context_tokens - reserve_output_tokens.
+            keep_recent: Number of most recent messages kept verbatim when
+                the conversation is compacted.
+            summary_prompt: System prompt used when summarizing the old
+                conversation during compaction.
+            fallback_summary: Summary message used when summarization fails
+                or returns nothing.
+            transcript_char_limit: Maximum characters of old conversation
+                handed to the summarizer in one call.
+            max_tool_rounds: Maximum model/tool rounds for the coordinator
+                per user message.
+            max_tool_output_chars: Longest tool output kept by the
+                coordinator; longer outputs are truncated.
+            permission_gate: Gate for the coordinator and for any agent that
+                does not pass an explicit gate of its own. Defaults to a
+                CliPermissionGate that prompts.
+            tool_gates: Per-tool gate overrides, keyed by tool name, applied
+                to the coordinator and bound agents (unless an agent passed
+                its own explicit tool_gates). Unknown tool names raise a
+                ValueError.
+            client: Pre-built Client to share (e.g. one with a custom
+                `openai_client`); a new Client is built from model, base_url
+                and api_key when None.
+        """
         self.client = client or Client(model=model, base_url=base_url, api_key=api_key)
         self.permission_gate = permission_gate or CliPermissionGate()
         self.tool_gates = tool_gates or {}
@@ -85,6 +133,15 @@ class Assistant:
         self.coordinator.pre_tool_hook = self._snapshot_tool_call
 
     def _bind(self, agent: Agent) -> None:
+        """Wire a sub-agent to the assistant's shared resources.
+
+        Fills in the client and context manager when the agent does not
+        have its own, and inherits the permission gate unless the agent
+        passed one explicitly. Also installs the undo snapshot hook.
+
+        Args:
+            agent: The sub-agent to bind. Modified in place.
+        """
         if agent.client is None:
             agent.client = self.client
         if agent.context is None:
@@ -96,6 +153,11 @@ class Assistant:
         agent.pre_tool_hook = self._snapshot_tool_call
 
     def _validate_tool_gates(self) -> None:
+        """Check that every name in `self.tool_gates` is an actual tool.
+
+        Raises:
+            ValueError: listing the unknown gate names and all known tools.
+        """
         known = {t.name for t in self.coordinator.tools}
         for agent in self.coordinator.agents:
             known |= {t.name for t in agent.tools}
@@ -107,27 +169,57 @@ class Assistant:
             )
 
     def _snapshot_tool_call(self, tool: Tool, arguments: dict[str, Any]) -> None:
+        """Pre-tool hook: snapshot files about to be edited or overwritten.
+
+        Args:
+            tool: The tool about to run.
+            arguments: Its parsed arguments; `path` names the file to
+                snapshot when present.
+        """
         if tool.name in self._SNAPSHOT_TOOLS and "path" in arguments:
             self.undo_log.snapshot(str(arguments["path"]))
 
     def chat(self, text: str, *, events: Events | None = None) -> str:
+        """Send one user message to the coordinator and return its answer.
+
+        The turn is recorded in the undo log so `undo()` can revert it.
+
+        Args:
+            text: The user's message.
+            events: Optional observer callbacks for streaming live progress.
+
+        Returns:
+            The coordinator's final answer.
+        """
         self.undo_log.begin_turn(len(self.coordinator.history))
         return self.coordinator.run(text, events=events)
 
     def undo(self, turns: int = 1) -> UndoResult:
         """Revert the last `turns` turn(s): restore changed files and rewind
-        the conversation. Returns what was restored."""
+        the conversation.
+
+        Args:
+            turns: Number of turns to revert. 1 undoes the last turn, 0 or a
+                negative value is a no-op.
+
+        Returns:
+            UndoResult with the restored and failed file paths, and how far
+            the conversation history should be rewound (None if nothing was
+            undone).
+        """
         result = self.undo_log.undo(turns)
         if result.history_depth is not None:
             del self.coordinator.history[result.history_depth :]
         return result
 
     def reset(self) -> None:
+        """Reset the assistant: forget the conversation and clear the undo
+        log. The model client, tools and gates stay configured."""
         self.coordinator.reset()
         self.undo_log.clear()
 
     def run(self) -> None:
-        """Start the interactive CLI REPL."""
+        """Start the interactive CLI REPL (blocks until the user exits)."""
         from .repl import Repl
 
         Repl(self).run()

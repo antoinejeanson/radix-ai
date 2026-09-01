@@ -1,6 +1,7 @@
 from radix import AutoApproveGate, CliPermissionGate, DenyGate, tool
 
 
+# Tests for the permission gates.
 @tool
 def run(command: str) -> str:
     """Run a command."""

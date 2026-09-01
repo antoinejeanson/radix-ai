@@ -4,6 +4,8 @@ Which tools are sensitive is decided by the permission gate, not by the
 tools themselves.
 """
 
+# Built-in tools bundle: file editing, shell command execution, and web
+# fetching — everything a quick assistant needs out of the box.
 from .files import edit_file, read_file, write_file
 from .shell import run_shell
 from .web import fetch_url

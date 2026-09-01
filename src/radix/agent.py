@@ -23,17 +23,36 @@ if TYPE_CHECKING:
     from .client import Client
     from .context import ContextManager
 
+# Agent: a system prompt plus a set of tools; runs the streaming tool-call
+# loop, compacts context, and enforces permission gates on every call.
 DEFAULT_MAX_TOOL_OUTPUT_CHARS = 16000
 DEFAULT_MAX_TOOL_ROUNDS = 8
 
 
 def _truncate(text: str, limit: int) -> str:
+    """Cut `text` to `limit` characters, appending a marker when cut.
+
+    Args:
+        text: The tool output to truncate.
+        limit: Maximum number of characters to keep.
+
+    Returns:
+        The output, possibly shortened with a trailing marker.
+    """
     if len(text) <= limit:
         return text
     return text[:limit] + "\n... [output truncated]"
 
 
 def _describe_call(call: ToolCall) -> str:
+    """One-line human-readable summary of a tool call, for events.
+
+    Args:
+        call: The tool call to summarize.
+
+    Returns:
+        Something like "edit_file path=foo.py old_string=..." (truncated).
+    """
     args = " ".join(call.raw_arguments.split())
     if len(args) > 120:
         args = args[:117] + "..."
@@ -65,6 +84,42 @@ class Agent:
         stateful: bool = False,
         pre_tool_hook: Callable[[Tool, dict[str, Any]], None] | None = None,
     ) -> None:
+        """Create an agent.
+
+        Args:
+            name: Identifier shown in events and used to build the
+                coordinator's `ask_<name>` delegation tool.
+            description: What the agent is good at and when to delegate to
+                it (e.g. "edits code and runs tests"). Becomes part of the
+                `ask_<name>` tool description shown to the coordinator.
+            system_prompt: Instructions defining the agent's role and
+                behavior. An empty string sends no system prompt.
+            tools: Tools the agent may call. Every call must pass the
+                permission gate first.
+            client: Model client used for completions. When the agent is
+                bound to an Assistant, the assistant's client is used when
+                this is None.
+            context: ContextManager that keeps the conversation within a
+                token budget via compaction. None means no compaction: the
+                full history is always sent.
+            permission_gate: Decides whether a tool call may run. Defaults
+                to a CliPermissionGate that prompts on the terminal. When
+                bound to an Assistant, the assistant's gate is inherited
+                unless an explicit gate is passed here.
+            tool_gates: Per-tool overrides of `permission_gate`, keyed by
+                tool name. An Assistant validates the names and reports
+                unknown ones.
+            max_tool_rounds: At most this many model/tool rounds per run;
+                afterwards the agent is forced to answer without tools.
+            max_tool_output_chars: Longest tool output kept in the
+                conversation; anything longer is truncated with a marker.
+            stateful: When True, `run()` appends the task and its answer to
+                `history` so the next run continues the conversation. The
+                coordinator uses True; sub-agents default to False.
+            pre_tool_hook: Optional callback invoked right before each tool
+                call with the Tool and its parsed arguments. The Assistant
+                uses it to snapshot files for undo.
+        """
         self.name = name
         self.description = description
         self.system_prompt = system_prompt
@@ -84,9 +139,27 @@ class Agent:
         self._events: Events | None = None
 
     def reset(self) -> None:
+        """Forget the saved conversation history (only relevant for
+        stateful agents; has no effect on the tool set or gates)."""
         self.history.clear()
 
     def run(self, task: str, *, events: Events | None = None) -> str:
+        """Run one task and return the final answer.
+
+        The task is sent as a user message. With `stateful=True`, the task
+        and the answer are appended to `history` for the next run.
+
+        Args:
+            task: The instruction to execute, as plain text.
+            events: Optional observer callbacks for streaming live progress.
+
+        Returns:
+            The agent's final answer after all tool rounds.
+
+        Raises:
+            RuntimeError: if the agent has no client (it was neither passed
+                here nor bound by an Assistant).
+        """
         if self.client is None:
             raise RuntimeError(
                 f"agent '{self.name}' has no client; pass it to an Assistant "
@@ -116,6 +189,17 @@ class Agent:
         tools: list[dict[str, Any]] | None,
         events: Events | None,
     ) -> ChatResult:
+        """Run one streaming completion round.
+
+        Args:
+            messages: Messages to send (already compacted if applicable).
+            tools: OpenAI tool schemas offered to the model, or None.
+            events: Observer callbacks notified as the stream produces
+                deltas and when the round ends.
+
+        Returns:
+            The completed ChatResult with content, tool calls and usage.
+        """
         if events and events.on_start:
             events.on_start(self.name)
         started = time.monotonic()
@@ -133,6 +217,20 @@ class Agent:
         return result
 
     def _loop(self, messages: list[Message], events: Events | None) -> str:
+        """Drive the tool-call loop until the model answers without tools.
+
+        Compacts via `context` before every round and executes each tool
+        call, appending call and output messages to `messages`.
+
+        Args:
+            messages: Working conversation; starts with the system prompt
+                (if any) and ends with the user task. Grows in place with
+                tool calls and their outputs.
+            events: Observer callbacks for live progress.
+
+        Returns:
+            The agent's final answer.
+        """
         tool_schemas = [t.schema() for t in self.tools] or None
         for _ in range(self.max_tool_rounds):
             prepared = self.context.prepare(messages) if self.context else messages
@@ -159,6 +257,16 @@ class Agent:
         return self._chat_round(messages, None, events).content
 
     def _execute(self, call: ToolCall) -> str:
+        """Run one tool call, guarding permission and errors.
+
+        Args:
+            call: The tool call requested by the model.
+
+        Returns:
+            The tool output as a string, or an error message when the tool
+            is unknown, the arguments are invalid, permission is denied,
+            or the tool itself raises.
+        """
         tool = self._tools_by_name.get(call.name)
         if tool is None:
             available = ", ".join(self._tools_by_name) or "(none)"

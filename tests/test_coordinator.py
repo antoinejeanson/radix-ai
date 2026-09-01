@@ -5,6 +5,8 @@ from radix import Agent, AutoApproveGate, Coordinator, Events
 from radix.messages import ChatResult, ToolCall
 
 
+# Tests for Coordinator: ask_<name> delegation tools, unique agent names,
+# and nested coordinators.
 def make_setup(results):
     client = ScriptedClient(results)
     coder = Agent(

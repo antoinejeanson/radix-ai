@@ -11,6 +11,7 @@ from radix.messages import ChatResult, ToolCall
 from radix.repl import Repl
 
 
+# Tests for the Repl: slash commands, live event rendering, undo flow.
 def make_assistant(results, tools=None):
     client = ScriptedClient(results)
     return Assistant(

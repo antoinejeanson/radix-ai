@@ -8,20 +8,25 @@ if TYPE_CHECKING:
     from .messages import Usage
 
 
+# Events: dataclass of optional observer callbacks, used by the REPL to
+# render agent progress live (thinking, deltas, tool calls, results).
 @dataclass
 class Events:
     """Observers for agent execution, used by the REPL to show what happens.
 
-    on_start(agent_name): a model round begins (the agent is "thinking").
-    on_delta(agent_name, text): a chunk of streamed text arrived.
-    on_activity(agent_name, description): a tool call is about to run.
-    on_tool_output(agent_name, tool_name, output): a tool finished running.
-    on_stop(agent_name, elapsed_seconds, produced_text, usage): a model round
-        ended; `usage` is the token accounting for the round, when the server
-        reports one.
+    Fields:
+        on_start(agent_name): a model round begins (the agent is "thinking").
+        on_delta(agent_name, text): a chunk of streamed text arrived.
+        on_activity(agent_name, description): a tool call is about to run.
+        on_tool_output(agent_name, tool_name, output): a tool finished
+            running.
+        on_stop(agent_name, elapsed_seconds, produced_text, usage): a model
+            round ended; `usage` is the token accounting for the round, when
+            the server reports one.
 
     Events from sub-agents carry the sub-agent's name, so hosts can tell
-    coordinator and sub-agent output apart.
+    coordinator and sub-agent output apart. Any field may be None to skip
+    that notification.
     """
 
     on_start: Callable[[str], None] | None = None

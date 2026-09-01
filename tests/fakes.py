@@ -5,6 +5,9 @@ from typing import Any
 
 from radix.messages import ChatResult
 
+# Test double for radix.Client: returns pre-scripted ChatResults in order,
+# keeping every test offline.
+
 
 class FakeStream:
     def __init__(self, result: ChatResult) -> None:

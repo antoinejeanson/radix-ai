@@ -3,6 +3,7 @@ from radix.context import ContextManager, estimate_tokens
 from radix.messages import ChatResult, assistant_message, system_message, user_message
 
 
+# Tests for ContextManager: token estimation, compaction and summarization.
 def build_messages(n_body=8, size=100):
     messages = [system_message("sys " + "x" * size)]
     for i in range(n_body):

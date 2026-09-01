@@ -6,12 +6,22 @@ import os
 from ..tool import tool
 from ..undo import _write_atomic
 
+# Built-in file tools: read_file (capped reads), edit_file (unique-snippet
+# replace with a diff), write_file (atomic create/overwrite).
 MAX_CONTENT_CHARS = 16000
 
 
 @tool
 def read_file(path: str) -> str:
-    """Read a text file from the local filesystem and return its contents."""
+    """Read a text file from the local filesystem and return its contents.
+
+    Args:
+        path: File to read; `~` is expanded. Content is capped at
+            MAX_CONTENT_CHARS characters.
+
+    Returns:
+        The file contents, or an error message.
+    """
     path = os.path.expanduser(path)
     if not os.path.exists(path):
         return f"Error: no such file or directory: {path}"
@@ -35,6 +45,14 @@ def edit_file(path: str, old_string: str, new_string: str) -> str:
 
     `old_string` must match a single, unique stretch of the file exactly,
     including whitespace and newlines. Copy it verbatim from read_file output.
+
+    Args:
+        path: File to edit; `~` is expanded.
+        old_string: The exact snippet to replace.
+        new_string: The replacement text.
+
+    Returns:
+        The file path plus a unified diff, or an error message.
     """
     path = os.path.expanduser(path)
     if not os.path.exists(path):
@@ -81,7 +99,16 @@ def edit_file(path: str, old_string: str, new_string: str) -> str:
 
 @tool
 def write_file(path: str, content: str) -> str:
-    """Create or overwrite a text file with the given content."""
+    """Create or overwrite a text file with the given content. Parent
+    directories are created as needed.
+
+    Args:
+        path: Target file path; `~` is expanded.
+        content: The full text to write.
+
+    Returns:
+        A confirmation with the character count, or an error message.
+    """
     path = os.path.expanduser(path)
     if os.path.isdir(path):
         return f"Error: {path} is a directory, not a file"

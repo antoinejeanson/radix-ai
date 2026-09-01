@@ -8,6 +8,8 @@ from .messages import Message
 if TYPE_CHECKING:
     from .client import Client
 
+# ContextManager: keeps a conversation within a token budget by summarizing
+# (compacting) the oldest messages when it overflows.
 SUMMARY_PROMPT = (
     "Summarize the conversation transcript below concisely. Keep all facts, decisions, "
     "results and pending tasks. Reply with the summary only."
@@ -20,7 +22,15 @@ DEFAULT_KEEP_RECENT = 4
 
 
 def estimate_tokens(text: str) -> int:
-    """Cheap token estimate (~4 chars per token) without a tokenizer dependency."""
+    """Cheap token estimate (~4 chars per token) without a tokenizer
+    dependency.
+
+    Args:
+        text: The text to estimate.
+
+    Returns:
+        An approximate token count, at least 1.
+    """
     return max(1, (len(text) + 3) // 4)
 
 
@@ -44,6 +54,25 @@ class ContextManager:
         transcript_char_limit: int = TRANSCRIPT_CHAR_LIMIT,
         token_estimator: Callable[[str], int] | None = None,
     ) -> None:
+        """Create a context manager with a token budget.
+
+        Args:
+            client: Client used to summarize old messages during compaction.
+            max_context_tokens: Maximum tokens the full conversation may
+                use; compaction kicks in beyond budget - reserve_output_tokens.
+            reserve_output_tokens: Tokens reserved for the model's answer;
+                the conversation budget is
+                max_context_tokens - reserve_output_tokens.
+            keep_recent: Number of most recent messages kept verbatim when
+                compacting; everything older is summarized.
+            summary_prompt: System prompt for the summarization completion.
+            fallback_summary: Message used when summarization fails or the
+                model returns nothing usable.
+            transcript_char_limit: Maximum characters of old conversation
+                sent to the summarizer in one completion.
+            token_estimator: Callable mapping text to an estimated token
+                count; defaults to `estimate_tokens` (~4 chars/token).
+        """
         self.client = client
         self.budget = max_context_tokens - reserve_output_tokens
         self.keep_recent = keep_recent
@@ -53,6 +82,15 @@ class ContextManager:
         self._estimate = token_estimator or estimate_tokens
 
     def message_tokens(self, messages: list[Message]) -> int:
+        """Estimate how many tokens a message list uses.
+
+        Args:
+            messages: Message list in OpenAI chat format.
+
+        Returns:
+            Estimated token count: 4 per message plus the estimate of every
+            string value in it.
+        """
         total = 0
         for message in messages:
             total += 4
@@ -62,11 +100,32 @@ class ContextManager:
         return total
 
     def prepare(self, messages: list[Message]) -> list[Message]:
+        """Return a message list within budget, compacting when needed.
+
+        Args:
+            messages: The conversation to check.
+
+        Returns:
+            The same list when within budget, else a compacted list where
+            the oldest messages were replaced by a summary.
+        """
         if self.message_tokens(messages) <= self.budget:
             return messages
         return self._compact(messages)
 
     def _compact(self, messages: list[Message]) -> list[Message]:
+        """Summarize the oldest messages into a single system message.
+
+        The leading system prompt (if any) and the `keep_recent` newest
+        messages stay verbatim. If the summary does not fit the budget, the
+        oldest kept messages are dropped one by one.
+
+        Args:
+            messages: Conversation exceeding the budget.
+
+        Returns:
+            A new, smaller message list.
+        """
         system = (
             messages[0] if messages and messages[0].get("role") == "system" else None
         )
@@ -93,6 +152,15 @@ class ContextManager:
         return result
 
     def _summarize(self, messages: list[Message]) -> str:
+        """Ask the model to summarize a stretch of conversation.
+
+        Args:
+            messages: Messages to summarize (roles plus text content).
+
+        Returns:
+            The model's summary, or `fallback_summary` when there is nothing
+            to summarize or the completion fails.
+        """
         lines = []
         for message in messages:
             content = message.get("content")

@@ -19,6 +19,8 @@ from .safety import SAFETY_SYSTEM_PROMPT, LlmSafetyChecker, SafetyVerdict
 from .tool import Tool, tool
 from .undo import UndoLog, UndoResult
 
+# Public package surface: re-exports the classes, tools and constants that
+# users import from `radix` (the REPL stays lazy-loaded to keep imports light).
 __version__ = "0.1.0"
 
 

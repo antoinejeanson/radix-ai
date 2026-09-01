@@ -8,6 +8,8 @@ from radix import DEFAULT_BASE_URL, Client, Usage
 from radix.messages import ChatResult
 
 
+# Tests for Client and ChatStream: streaming, usage accounting, and
+# server-error handling.
 class FakeFunction:
     def __init__(self, name=None, arguments=None):
         self.name = name

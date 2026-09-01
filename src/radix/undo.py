@@ -5,7 +5,15 @@ import tempfile
 from dataclasses import dataclass, field
 
 
+# Undo: snapshots file state per assistant turn so Assistant.undo() can
+# restore changes and rewind the conversation to the right depth.
 def _write_atomic(path: str, content: str) -> None:
+    """Write `content` to `path` atomically (write temp file, then rename).
+
+    Args:
+        path: Target file path.
+        content: Text to write.
+    """
     fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)) or ".")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -66,9 +74,25 @@ class UndoLog:
         self._turns: list[Turn] = []
 
     def begin_turn(self, history_depth: int) -> None:
+        """Start recording a new assistant turn.
+
+        Args:
+            history_depth: The coordinator's history length at the start of
+                the turn; undoing the turn rewinds to this depth.
+        """
         self._turns.append(Turn(history_depth=history_depth))
 
     def snapshot(self, path: str) -> None:
+        """Record a file's pre-change state, once per turn.
+
+        The earliest state within the turn wins, so a file modified several
+        times is restored to what it was before the turn.
+
+        Args:
+            path: The file to snapshot; non-existent files are recorded as
+                such (so undoing removes them). Unreadable binaries are
+                skipped.
+        """
         if not self._turns:
             return
         path = os.path.abspath(os.path.expanduser(path))
@@ -86,6 +110,19 @@ class UndoLog:
         turn.files[path] = FileSnapshot(path, content)
 
     def undo(self, turns: int = 1) -> UndoResult:
+        """Restore the files changed during the last `turns` turn(s).
+
+        Restores each file to its earliest recorded pre-turn state and
+        reports how far the conversation should be rewound.
+
+        Args:
+            turns: How many turns to revert. 0 or a negative value is a
+                no-op; more than recorded reverts everything recorded.
+
+        Returns:
+            An UndoResult with the restored and failed paths and the
+            history depth to truncate to (None when nothing was undone).
+        """
         result = UndoResult()
         if turns <= 0 or not self._turns:
             return result
@@ -105,14 +142,24 @@ class UndoLog:
         return result
 
     def clear(self) -> None:
+        """Forget all recorded turns and snapshots."""
         self._turns.clear()
 
     def __len__(self) -> int:
+        """The number of recorded turns (used by the REPL's `/undo all`)."""
         return len(self._turns)
 
     @staticmethod
     def _restore(snap: FileSnapshot) -> bool:
-        """Restore one snapshot. Returns True when the file changed."""
+        """Restore one snapshot to disk.
+
+        Args:
+            snap: The FileSnapshot to restore.
+
+        Returns:
+            True when the file actually changed on disk, False when it was
+            already in the snapshot state.
+        """
         if snap.content is None:
             if os.path.exists(snap.path):
                 os.remove(snap.path)

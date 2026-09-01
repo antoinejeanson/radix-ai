@@ -11,6 +11,7 @@ from radix import (
 from radix.messages import ChatResult, ToolCall
 
 
+# Tests for the LLM-judged gates: LlmAutoSafetyGate and LlmAdvisoryGate.
 @tool
 def shell(command: str) -> str:
     """Run a command."""

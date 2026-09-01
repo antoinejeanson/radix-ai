@@ -7,12 +7,24 @@ from openai import APIStatusError, OpenAI
 
 from .messages import ChatResult, Message, ToolCall, Usage
 
+# Client: thin wrapper over any OpenAI-compatible chat completions API, with
+# streaming (ChatStream) and non-streaming (complete) requests.
 DEFAULT_BASE_URL = "http://localhost:8080/v1"
 DEFAULT_API_KEY = "radix"
 DEFAULT_MODEL = "radix"
 
 
 def _to_usage(raw: Any) -> Usage | None:
+    """Normalize a server usage object or dict into a `Usage`.
+
+    Args:
+        raw: Usage payload from the API client (an object with
+            prompt_tokens/completion_tokens/total_tokens attributes), a
+            matching dict, or None.
+
+    Returns:
+        A Usage, or None when `raw` is None.
+    """
     if raw is None:
         return None
     if isinstance(raw, dict):
@@ -45,6 +57,15 @@ class ChatStream:
         messages: list[Message],
         tools: list[dict[str, Any]] | None,
     ) -> None:
+        """Stream a completion. Prefer `Client.chat_stream()` over building
+        this directly.
+
+        Args:
+            api: The openai client that performs the network request.
+            model: Model id to use for the completion.
+            messages: The conversation, in OpenAI chat format.
+            tools: Tool schemas offered to the model, or None.
+        """
         self._api = api
         self._model = model
         self._messages = messages
@@ -52,6 +73,19 @@ class ChatStream:
         self._result: ChatResult | None = None
 
     def _open(self, kwargs: dict[str, Any]) -> Iterator[Any]:
+        """Open the streaming response, retrying without `stream_options`
+        when the server rejects them (some OpenAI-compatible endpoints do).
+
+        Args:
+            kwargs: The completion request arguments.
+
+        Yields:
+            Response chunks from the API.
+
+        Raises:
+            APIStatusError: for any non-400 error, or a 400 unrelated to
+                `stream_options`.
+        """
         try:
             return self._api.chat.completions.create(**kwargs)
         except APIStatusError as exc:
@@ -61,6 +95,14 @@ class ChatStream:
             raise
 
     def __iter__(self) -> Iterator[str]:
+        """Iterate to receive text deltas as they stream in.
+
+        After the iterator is exhausted, read `.result` for the complete
+        response, tool calls and usage.
+
+        Yields:
+            Each text delta as a string.
+        """
         kwargs: dict[str, Any] = {
             "model": self._model,
             "messages": self._messages,
@@ -115,6 +157,14 @@ class ChatStream:
 
     @property
     def result(self) -> ChatResult:
+        """The complete response once the stream has been consumed.
+
+        Returns:
+            The ChatResult with content, tool calls and usage.
+
+        Raises:
+            RuntimeError: if accessed before the stream was fully iterated.
+        """
         if self._result is None:
             raise RuntimeError("stream has not been consumed yet")
         return self._result
@@ -136,6 +186,19 @@ class Client:
         timeout: float = 600.0,
         openai_client: OpenAI | None = None,
     ) -> None:
+        """Connect to an OpenAI-compatible chat completions API.
+
+        Args:
+            model: Model id sent with every request.
+            base_url: API base URL. The default targets a local llama.cpp
+                server (`llama-server`); any OpenAI-compatible endpoint
+                works (vLLM, Ollama, OpenRouter, ...).
+            api_key: API key for the endpoint. llama.cpp accepts anything;
+                hosted APIs require a real one.
+            timeout: HTTP timeout in seconds for the underlying client.
+            openai_client: Pre-built openai client to use instead of
+                constructing one from base_url, api_key and timeout.
+        """
         self.model = model
         self._api = openai_client or OpenAI(
             base_url=base_url, api_key=api_key, timeout=timeout
@@ -144,6 +207,15 @@ class Client:
     def complete(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None
     ) -> ChatResult:
+        """Run one non-streaming chat completion and return the full result.
+
+        Args:
+            messages: The conversation, in OpenAI chat format.
+            tools: Tool schemas offered to the model, or None.
+
+        Returns:
+            The complete ChatResult with content, tool calls and usage.
+        """
         kwargs: dict[str, Any] = {"model": self.model, "messages": messages}
         if tools:
             kwargs["tools"] = tools
@@ -166,4 +238,13 @@ class Client:
     def chat_stream(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None
     ) -> ChatStream:
+        """Start a streaming chat completion.
+
+        Args:
+            messages: The conversation, in OpenAI chat format.
+            tools: Tool schemas offered to the model, or None.
+
+        Returns:
+            A ChatStream: iterate for text deltas, then read `.result`.
+        """
         return ChatStream(self._api, model=self.model, messages=messages, tools=tools)

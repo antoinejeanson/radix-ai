@@ -5,6 +5,8 @@ from radix import Agent, AutoApproveGate, DenyGate, Events, Usage, tool
 from radix.messages import ChatResult, ToolCall
 
 
+# Tests for Agent: the tool-call loop, permission gates, hooks and
+# stateful history.
 @tool
 def add(a: int, b: int) -> str:
     """Add two numbers."""

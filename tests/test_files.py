@@ -1,6 +1,7 @@
 from radix.builtin import edit_file, read_file, write_file
 
 
+# Tests for the built-in file tools.
 def test_read_file(tmp_path):
     path = tmp_path / "hello.txt"
     path.write_text("hello radix")

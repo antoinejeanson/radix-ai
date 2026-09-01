@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+# Tool: dataclass plus decorator turning typed Python functions into tools
+# with OpenAI function-calling schemas derived from their type hints.
 _PRIMITIVES: dict[type, str] = {
     str: "string",
     int: "integer",
@@ -42,6 +44,19 @@ def _is_optional(tp: Any) -> bool:
 
 
 def schema_from_signature(fn: Callable[..., Any]) -> dict[str, Any]:
+    """Derive the OpenAI parameter JSON schema from a function's signature.
+
+    Type hints decide the schema; parameters without a default and not
+    Optional become `required`. Unsupported types fall back to "string".
+
+    Args:
+        fn: The function to inspect (must be introspectable; avoid
+            `*args`/`**kwargs` and names without hints).
+
+    Returns:
+        A JSON schema object with "type", "properties" and, when needed,
+        "required".
+    """
     hints = typing.get_type_hints(fn)
     properties: dict[str, Any] = {}
     required: list[str] = []
@@ -62,6 +77,14 @@ class Tool:
 
     Every tool call goes through the agent's permission gate before running;
     which tools are sensitive is the gate's decision, not the tool's.
+
+    Fields:
+        name: Unique tool name shown to the model.
+        description: What the tool does and when to use it.
+        parameters: OpenAI JSON schema describing the accepted arguments.
+        fn: The implementation, called with keyword arguments parsed from
+            the model's call. Its return value (stringified if needed)
+            becomes the tool output message.
     """
 
     name: str
@@ -70,10 +93,24 @@ class Tool:
     fn: Callable[..., Any]
 
     def run(self, **kwargs: Any) -> str:
+        """Call the tool with keyword arguments.
+
+        Args:
+            **kwargs: Arguments matching the declared parameters.
+
+        Returns:
+            The tool's output as a string.
+        """
         result = self.fn(**kwargs)
         return result if isinstance(result, str) else str(result)
 
     def schema(self) -> dict[str, Any]:
+        """The OpenAI function-calling schema for this tool.
+
+        Returns:
+            A dict with "type": "function" and the function name,
+            description and parameter schema.
+        """
         return {
             "type": "function",
             "function": {
@@ -94,6 +131,15 @@ def tool(
 
     The tool name defaults to the function name, the description to its
     docstring, and the parameter JSON schema is derived from the type hints.
+
+    Args:
+        fn: The function to wrap; omit when using `@tool(...)` with
+            arguments.
+        name: Tool name; defaults to the function name.
+        description: Tool description; defaults to the function's docstring.
+
+    Returns:
+        A Tool, or the decorator itself when called as `@tool(...)`.
     """
 
     def wrap(f: Callable[..., Any]) -> Tool:

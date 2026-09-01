@@ -10,6 +10,7 @@ from radix import (
 from radix.messages import ChatResult, ToolCall
 
 
+# Tests for Assistant: sub-agent binding, undo wiring, tool-gate checks.
 @tool
 def fetch_url(url: str) -> str:
     """Fetch a web page."""
