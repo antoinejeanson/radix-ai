@@ -8,6 +8,7 @@ from .events import Events
 from .messages import ChatResult, Message, ToolCall, Usage
 from .permissions import AutoApproveGate, CliPermissionGate, DenyGate, PermissionGate
 from .tool import Tool, tool
+from .undo import UndoLog, UndoResult
 
 __version__ = "0.1.0"
 
@@ -28,6 +29,8 @@ __all__ = [
     "PermissionGate",
     "Tool",
     "ToolCall",
+    "UndoLog",
+    "UndoResult",
     "Usage",
     "tool",
 ]

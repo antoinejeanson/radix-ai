@@ -136,8 +136,8 @@ Then grow it: give the coordinator tools for quick jobs, and add specialized
 sub-agents when tasks deserve their own context and expertise. That's the
 whole framework — everything below is just composition.
 
-Inside the REPL: `/help` for commands, `/reset` to forget the conversation,
-`Ctrl+D` to exit.
+Inside the REPL: `/help` for commands, `/undo` to revert the last turn (files
+and conversation), `Ctrl+D` to exit.
 
 ---
 
@@ -211,6 +211,12 @@ one agent with a few tools, and that's exactly what Radix supports too.
 silently rewrite the wrong line. The diff it returns lets the model — and you
 — verify the change.
 
+Every change made by `edit_file` and `write_file` is tracked per turn, so
+`/undo` in the REPL restores the affected files to their pre-turn state (and
+deletes files the assistant created). `/undo N` reverts the last N turns,
+`/undo all` reverts everything. Changes made through `run_shell` or your own
+tools are not tracked.
+
 ### Permissions
 
 The default `CliPermissionGate` prompts on every call that requires permission. Gates are a
@@ -266,6 +272,7 @@ radix/
 ├── permissions.py  # Permission gates
 ├── tool.py         # @tool decorator + schema generation
 ├── messages.py     # Message & result types
+├── undo.py         # Per-turn file snapshots for /undo
 └── builtin/        # read_file, edit_file, write_file, run_shell, fetch_url
 ```
 

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from .agent import Agent
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
 from .context import ContextManager
@@ -7,6 +9,7 @@ from .coordinator import Coordinator
 from .events import Events
 from .permissions import CliPermissionGate, PermissionGate
 from .tool import Tool
+from .undo import UndoLog, UndoResult
 
 
 class Assistant:
@@ -19,6 +22,8 @@ class Assistant:
     Defaults target a local llama.cpp server (`llama-server`); any
     OpenAI-compatible endpoint works via `base_url`.
     """
+
+    _SNAPSHOT_TOOLS = frozenset({"edit_file", "write_file"})
 
     def __init__(
         self,
@@ -36,6 +41,7 @@ class Assistant:
     ) -> None:
         self.client = client or Client(model=model, base_url=base_url, api_key=api_key)
         self.permission_gate = permission_gate or CliPermissionGate()
+        self.undo_log = UndoLog()
         self.context = ContextManager(
             self.client,
             max_context_tokens=max_context_tokens,
@@ -52,6 +58,7 @@ class Assistant:
             context=self.context,
             permission_gate=self.permission_gate,
         )
+        self.coordinator.pre_tool_hook = self._snapshot_tool_call
 
     def _bind(self, agent: Agent) -> None:
         if agent.client is None:
@@ -59,12 +66,27 @@ class Assistant:
         if agent.context is None:
             agent.context = self.context
         agent.permission_gate = self.permission_gate
+        agent.pre_tool_hook = self._snapshot_tool_call
+
+    def _snapshot_tool_call(self, tool: Tool, arguments: dict[str, Any]) -> None:
+        if tool.name in self._SNAPSHOT_TOOLS and "path" in arguments:
+            self.undo_log.snapshot(str(arguments["path"]))
 
     def chat(self, text: str, *, events: Events | None = None) -> str:
+        self.undo_log.begin_turn(len(self.coordinator.history))
         return self.coordinator.run(text, events=events)
+
+    def undo(self, turns: int = 1) -> UndoResult:
+        """Revert the last `turns` turn(s): restore changed files and rewind
+        the conversation. Returns what was restored."""
+        result = self.undo_log.undo(turns)
+        if result.history_depth is not None:
+            del self.coordinator.history[result.history_depth:]
+        return result
 
     def reset(self) -> None:
         self.coordinator.reset()
+        self.undo_log.clear()
 
     def run(self) -> None:
         """Start the interactive CLI REPL."""

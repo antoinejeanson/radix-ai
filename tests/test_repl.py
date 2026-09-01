@@ -1,3 +1,4 @@
+import json
 import time
 from io import StringIO
 
@@ -5,13 +6,16 @@ from rich.console import Console
 
 from fakes import ScriptedClient
 from radix import Agent, Assistant, AutoApproveGate, Usage
-from radix.messages import ChatResult
+from radix.builtin import write_file
+from radix.messages import ChatResult, ToolCall
 from radix.repl import Repl
 
 
-def make_assistant(results):
+def make_assistant(results, tools=None):
     client = ScriptedClient(results)
-    return Assistant(client=client, agents=[Agent("coder")], permission_gate=AutoApproveGate())
+    return Assistant(
+        client=client, agents=[Agent("coder")], tools=tools, permission_gate=AutoApproveGate()
+    )
 
 
 def make_repl():
@@ -29,11 +33,82 @@ def run_repl(assistant, inputs):
     return repl
 
 
+def run_repl_captured(assistant, inputs):
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console)
+    repl._session = type("S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))})()
+    repl.run()
+    return repl, io
+
+
 def test_repl_chat_and_commands():
     assistant = make_assistant([ChatResult(content="answer one"), ChatResult(content="answer two")])
-    run_repl(assistant, ["/help", "first", "/reset", "second", "/exit"])
+    run_repl(assistant, ["/help", "first", "/undo all", "second", "/exit"])
     assert len(assistant.coordinator.history) == 2
     assert assistant.coordinator.history[0]["content"] == "second"
+
+
+def test_repl_undo_restores_files_and_rewinds(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("before")
+    assistant = make_assistant(
+        [
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        raw_arguments=json.dumps({"path": str(path), "content": "after"}),
+                    )
+                ]
+            ),
+            ChatResult(content="done"),
+        ],
+        tools=[write_file],
+    )
+    repl, io = run_repl_captured(assistant, ["change it", "/undo", "/exit"])
+    assert path.read_text() == "before"
+    assert assistant.coordinator.history == []
+    out = io.getvalue()
+    assert "restored:" in out
+    assert "conversation rewound" in out
+
+
+def test_repl_undo_rewinds_conversation_only():
+    assistant = make_assistant([ChatResult(content="hi")])
+    run_repl_captured(assistant, ["hello", "/undo", "/exit"])
+    assert assistant.coordinator.history == []
+
+
+def test_repl_undo_nothing_to_undo():
+    assistant = make_assistant([])
+    _, io = run_repl_captured(assistant, ["/undo", "/exit"])
+    assert "nothing to undo" in io.getvalue()
+
+
+def test_repl_undo_bad_argument():
+    assistant = make_assistant([])
+    _, io = run_repl_captured(assistant, ["/undo x", "/exit"])
+    assert "usage: /undo [N|all]" in io.getvalue()
+
+
+def test_repl_undo_all_reverts_everything(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("v0")
+    edit = lambda content: ChatResult(  # noqa: E731
+        tool_calls=[
+            ToolCall(id="c", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": content}))
+        ]
+    )
+    assistant = make_assistant(
+        [edit("v1"), ChatResult(content="one"), edit("v2"), ChatResult(content="two")],
+        tools=[write_file],
+    )
+    run_repl(assistant, ["t1", "t2", "/undo all", "/exit"])
+    assert path.read_text() == "v0"
+    assert assistant.coordinator.history == []
+    assert len(assistant.undo_log) == 0
 
 
 def test_repl_survives_errors():

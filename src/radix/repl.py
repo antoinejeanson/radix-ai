@@ -21,7 +21,9 @@ if TYPE_CHECKING:
 
 HELP_TEXT = """commands:
   /help   show this help
-  /reset  forget the conversation history
+  /undo   revert the last turn: restore changed files, rewind the conversation
+  /undo N revert the last N turns
+  /undo all  revert everything (files and conversation)
   /exit   quit (Ctrl+D also works)"""
 
 MAX_OUTPUT_LINES = 40
@@ -104,17 +106,39 @@ class Repl:
             self.console.print()
 
     def _command(self, text: str) -> bool:
-        command = text.split()[0]
+        words = text.split()
+        command = words[0]
         if command in ("/exit", "/quit"):
             return True
         if command == "/help":
             self.console.print(HELP_TEXT)
-        elif command == "/reset":
-            self.assistant.reset()
-            self.console.print("[dim]conversation reset[/dim]")
+        elif command == "/undo":
+            self._undo(words[1:])
         else:
             self.console.print(f"[dim]unknown command: {command} — try /help[/dim]")
         return False
+
+    def _undo(self, args: list[str]) -> None:
+        if not args:
+            turns = 1
+        elif args[0] == "all":
+            turns = len(self.assistant.undo_log)
+        else:
+            try:
+                turns = int(args[0])
+            except ValueError:
+                self.console.print("[dim]usage: /undo [N|all][/dim]")
+                return
+        before = len(self.assistant.coordinator.history)
+        result = self.assistant.undo(turns)
+        if result.restored:
+            self.console.print(f"[dim]restored:[/dim] {', '.join(result.restored)}")
+        if len(self.assistant.coordinator.history) < before:
+            self.console.print("[dim]conversation rewound[/dim]")
+        if result.failed:
+            self.console.print(f"[red]could not restore:[/red] {', '.join(result.failed)}")
+        if not result.restored and result.history_depth is None:
+            self.console.print("[dim]nothing to undo[/dim]")
 
     def _is_root(self) -> bool:
         return self._agent == self.assistant.coordinator.name

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from .events import Events
@@ -59,6 +60,7 @@ class Agent:
         permission_gate: PermissionGate | None = None,
         max_tool_rounds: int = 8,
         stateful: bool = False,
+        pre_tool_hook: Callable[[Tool, dict[str, Any]], None] | None = None,
     ) -> None:
         self.name = name
         self.description = description
@@ -69,6 +71,7 @@ class Agent:
         self.permission_gate = permission_gate or CliPermissionGate()
         self.max_tool_rounds = max_tool_rounds
         self.stateful = stateful
+        self.pre_tool_hook = pre_tool_hook
         self.history: list[Message] = []
         self._tools_by_name = {t.name: t for t in self.tools}
         self._events: Events | None = None
@@ -150,6 +153,8 @@ class Agent:
             return "Error: tool arguments must be a JSON object"
         if not self.permission_gate.check(tool, arguments):
             return "Permission denied by the user. Do not retry the same call; ask the user how to proceed instead."
+        if self.pre_tool_hook is not None:
+            self.pre_tool_hook(tool, arguments)
         try:
             output = tool.run(**arguments)
         except TypeError as exc:

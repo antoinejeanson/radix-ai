@@ -11,6 +11,8 @@ def test_assistant_binds_subagents():
     assert coder.client is client
     assert coder.context is assistant.context
     assert coder.permission_gate is assistant.permission_gate
+    assert coder.pre_tool_hook is not None
+    assert assistant.coordinator.pre_tool_hook is not None
     assert assistant.coordinator.client is client
     assert [t.name for t in assistant.coordinator.tools] == ["ask_coder"]
 

@@ -2,23 +2,11 @@ from __future__ import annotations
 
 import difflib
 import os
-import tempfile
 
 from ..tool import tool
+from ..undo import _write_atomic
 
 MAX_CONTENT_CHARS = 16000
-
-
-def _write_atomic(path: str, content: str) -> None:
-    fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)) or ".")
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(content)
-        os.replace(tmp_path, path)
-    except BaseException:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
 
 
 @tool
