@@ -10,7 +10,7 @@ Then run this file:
 """
 
 from radix import Assistant, AutoApproveGate, Client, LlmAutoSafetyGate
-from radix.builtin import edit_file, read_file, run_shell, write_file
+from radix.builtin import edit_file, read_file, run_shell, write_file, ask_question
 
 client = Client(model="radix", base_url="http://localhost:8080/v1")
 
@@ -26,7 +26,7 @@ client = Client(model="radix", base_url="http://localhost:8080/v1")
 
 radix_code = Assistant(
     client=client,
-    max_context_tokens=16384,  # match your llama.cpp -c value
+    max_context_tokens=32767,  # match your llama.cpp -c value
     reserve_output_tokens=3072,
     keep_recent=6,
     transcript_char_limit=16000,
@@ -47,7 +47,7 @@ radix_code = Assistant(
     tool_gates={
         "run_shell": LlmAutoSafetyGate(client, confirm_unsafe=True),
     },
-    tools=[read_file, edit_file, write_file, run_shell],
+    tools=[read_file, edit_file, write_file, run_shell, ask_question],
 )
 
 if __name__ == "__main__":
