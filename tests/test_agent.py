@@ -11,7 +11,7 @@ def add(a: int, b: int) -> str:
     return str(a + b)
 
 
-@tool(ask_permission=True)
+@tool
 def shell(command: str) -> str:
     """Run a command."""
     return f"ran: {command}"
@@ -25,7 +25,14 @@ def verbose() -> str:
 
 def make_agent(results, tools=None, **kwargs):
     client = ScriptedClient(results)
-    agent = Agent("tester", system_prompt="be brief", tools=tools or [add], client=client, **kwargs)
+    kwargs.setdefault("permission_gate", AutoApproveGate())
+    agent = Agent(
+        "tester",
+        system_prompt="be brief",
+        tools=tools or [add],
+        client=client,
+        **kwargs,
+    )
     return agent, client
 
 
@@ -130,7 +137,7 @@ def test_permission_denied_is_reported_to_model():
     assert "Permission denied" in client.stream_calls[1]["messages"][3]["content"]
 
 
-def test_ask_permission_tool_runs_when_approved():
+def test_gated_tool_runs_when_approved():
     agent, client = make_agent(
         [
             ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
@@ -138,6 +145,47 @@ def test_ask_permission_tool_runs_when_approved():
         ],
         tools=[shell],
         permission_gate=AutoApproveGate(),
+    )
+    assert agent.run("list files") == "done"
+    assert client.stream_calls[1]["messages"][3]["content"] == "ran: ls"
+
+
+def test_gated_tool_is_denied_when_gate_says_no():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(content="ok"),
+        ],
+        tools=[shell],
+        permission_gate=DenyGate(),
+    )
+    assert agent.run("list files") == "ok"
+    assert "Permission denied" in client.stream_calls[1]["messages"][3]["content"]
+
+
+def test_tool_gate_denies_even_with_permissive_global_gate():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}')]),
+            ChatResult(content="ok"),
+        ],
+        tools=[shell],
+        permission_gate=AutoApproveGate(),
+        tool_gates={"shell": DenyGate()},
+    )
+    assert agent.run("clean up") == "ok"
+    assert "Permission denied" in client.stream_calls[1]["messages"][3]["content"]
+
+
+def test_tool_gate_replaces_global_gate():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(content="done"),
+        ],
+        tools=[shell],
+        permission_gate=DenyGate(),
+        tool_gates={"shell": AutoApproveGate()},
     )
     assert agent.run("list files") == "done"
     assert client.stream_calls[1]["messages"][3]["content"] == "ran: ls"

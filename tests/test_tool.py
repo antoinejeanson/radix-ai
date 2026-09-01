@@ -12,7 +12,6 @@ def test_tool_decorator_defaults():
     assert isinstance(add, Tool)
     assert add.name == "add"
     assert add.description == "Add two numbers."
-    assert add.ask_permission is False
     assert add.parameters == {
         "type": "object",
         "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}},
@@ -21,14 +20,13 @@ def test_tool_decorator_defaults():
     assert add.run(a=2, b=3) == "5"
 
 
-def test_tool_decorator_kwargs_and_ask_permission():
-    @tool(name="custom", description="Custom desc", ask_permission=True)
+def test_tool_decorator_kwargs():
+    @tool(name="custom", description="Custom desc")
     def something(x: str) -> str:
         return x
 
     assert something.name == "custom"
     assert something.description == "Custom desc"
-    assert something.ask_permission is True
 
 
 def test_tool_optional_and_container_types():

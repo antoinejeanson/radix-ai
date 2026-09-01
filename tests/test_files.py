@@ -7,10 +7,6 @@ def test_read_file(tmp_path):
     assert read_file.run(path=str(path)) == "hello radix"
 
 
-def test_read_file_not_ask_permission():
-    assert read_file.ask_permission is False
-
-
 def test_read_file_missing():
     out = read_file.run(path="/nonexistent/nope.txt")
     assert out.startswith("Error")
@@ -34,14 +30,6 @@ def test_read_file_truncation(tmp_path):
     out = read_file.run(path=str(path))
     assert out.endswith("[content truncated]")
     assert len(out) < 20000
-
-
-def test_edit_file_not_ask_permission():
-    assert edit_file.ask_permission is False
-
-
-def test_write_file_not_ask_permission():
-    assert write_file.ask_permission is False
 
 
 def test_edit_file_replaces_snippet(tmp_path):

@@ -1,6 +1,7 @@
 """Built-in tools.
 
-Terminal and Internet tools always ask for permission.
+Which tools are sensitive is decided by the permission gate, not by the
+tools themselves.
 """
 
 from .files import edit_file, read_file, write_file
