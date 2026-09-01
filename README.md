@@ -138,7 +138,11 @@ whole framework — everything below is just composition.
 
 Inside the REPL: `/help` for commands, `/compact` to summarize the old
 conversation right away (reducing the context without waiting for the budget),
-`/undo` to revert the last turn (files and conversation), `Ctrl+D` to exit.
+`/undo` to revert the last turn (files and conversation), `Ctrl+D` to exit. A
+status line always shows the current context usage
+(e.g. `context: 1.2k / 6.1k tok · 14 messages · 19%`): under the input while
+waiting, and through the whole turn — under the live views and after every
+tool call, so you can watch the context grow in real time.
 
 ---
 

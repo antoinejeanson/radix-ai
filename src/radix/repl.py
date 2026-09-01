@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
-from rich.console import Console
+from rich.console import Console, Group
 from rich.live import Live
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -17,7 +17,7 @@ from .events import Events
 
 if TYPE_CHECKING:
     from .assistant import Assistant
-    from .messages import Usage
+    from .messages import Message, Usage
 
 # Repl: the interactive CLI — prompt loop, slash commands (/help, /compact,
 # /undo, /exit), and live streaming views of everything the agents do.
@@ -59,7 +59,8 @@ class Repl:
     Shows everything that happens: thinking spinners with elapsed time for
     the coordinator and sub-agents, every tool call and its output (edits
     as colored diffs), and sub-agent answers with their total call time and
-    token use.
+    token use. A persistent status bar under the input line shows the
+    current context usage.
     """
 
     def __init__(
@@ -89,6 +90,8 @@ class Repl:
         self._run_start: dict[str, float] = {}
         self._tokens: dict[str, int] = {}
         self._estimated: dict[str, bool] = {}
+        self._status_override: int | None = None
+        self._activity_desc = ""
         self.events = Events(
             on_start=self._on_start,
             on_delta=self._on_delta,
@@ -107,7 +110,7 @@ class Repl:
         self.console.print("[bold]Radix[/bold] — type /help for help, Ctrl+D to exit")
         while True:
             try:
-                text = self._session.prompt("you> ")
+                text = self._session.prompt("you> ", bottom_toolbar=self._status_bar)
             except KeyboardInterrupt:
                 continue
             except EOFError:
@@ -120,6 +123,9 @@ class Repl:
                     break
                 continue
             try:
+                self._status_override = self.assistant.context.message_tokens(
+                    self._status_messages() + [{"role": "user", "content": text}]
+                )
                 self.assistant.chat(text, events=self.events)
             except KeyboardInterrupt:
                 self._cleanup_stream()
@@ -127,9 +133,61 @@ class Repl:
             except Exception as exc:
                 self._cleanup_stream()
                 self.console.print(f"[red]error:[/red] {exc}")
-            else:
+            finally:
                 self._cleanup_stream()
+                self._status_override = None
+                self._activity_desc = ""
             self.console.print()
+
+    def _status_messages(self) -> list[Message]:
+        """What the next model round would send: system prompt plus history.
+
+        Returns:
+            The coordinator's system prompt (if any) followed by its saved
+            conversation history.
+        """
+        messages: list[Message] = []
+        if self.assistant.coordinator.system_prompt:
+            messages.append(
+                {"role": "system", "content": self.assistant.coordinator.system_prompt}
+            )
+        messages.extend(self.assistant.coordinator.history)
+        return messages
+
+    def _bar_text(self) -> str:
+        """The status line: current context use versus budget.
+
+        Uses a running estimate during a chat turn (system prompt, saved
+        history, the user's task, and every tool call/output seen so far)
+        so the bar stays live while messages stream in; between turns it is
+        exact.
+
+        Returns:
+            One formatted line, e.g. "context: 1.2k / 6.1k tok · 14 messages
+            · 19%".
+        """
+        used = self._status_override
+        if used is None:
+            used = self.assistant.context.message_tokens(self._status_messages())
+        budget = self.assistant.context.budget
+        pct = round(100 * used / budget) if budget else 0
+        return (
+            f"context: {_format_tokens(used)} / {_format_tokens(budget)} tok"
+            f" · {len(self._status_messages())} messages · {pct}%"
+        )
+
+    def _status_bar(self) -> list[tuple[str, str]]:
+        """The persistent bottom toolbar: the coordinator's context use.
+
+        Recomputed whenever the prompt redraws, so it stays current after
+        chat turns, /compact and /undo. The prompt is only shown between
+        turns, so this always reflects the saved conversation exactly.
+
+        Returns:
+            One formatted line, e.g. "context: 1.2k / 6.1k tok · 14 messages
+            · 19%".
+        """
+        return [("dim", self._bar_text())]
 
     def _command(self, text: str) -> bool:
         """Handle one slash command.
@@ -208,6 +266,17 @@ class Repl:
         """
         return self._agent == self.assistant.coordinator.name
 
+    def _with_bar(self, body) -> Group:
+        """Wrap a live renderable so the context bar stays visible under it.
+
+        Args:
+            body: The renderable shown above the status line.
+
+        Returns:
+            A Group of the body plus the dim context bar.
+        """
+        return Group(body, Text(self._bar_text(), style="dim"))
+
     def _on_start(self, name: str) -> None:
         """Event: a model round begins for `name`; show a thinking spinner.
 
@@ -217,7 +286,10 @@ class Repl:
         self._cleanup_stream()
         self._agent = name
         self._live = Live(
-            Spinner("dots", text=Text(f"{name} is thinking", style="dim")),
+            Group(
+                Spinner("dots", text=Text(f"{name} is thinking", style="dim")),
+                Text(self._bar_text(), style="dim"),
+            ),
             console=self.console,
             refresh_per_second=10,
             vertical_overflow="visible",
@@ -235,7 +307,7 @@ class Repl:
             self._on_start(name)
         self._buffer += delta
         style = None if self._is_root() else "dim"
-        self._live.update(Text(self._buffer, style=style))
+        self._live.update(self._with_bar(Text(self._buffer, style=style)))
 
     def _on_activity(self, name: str, text: str) -> None:
         """Event: a tool call is about to run; print it, and start the
@@ -246,6 +318,7 @@ class Repl:
             text: One-line description of the call.
         """
         self._cleanup_stream()
+        self._activity_desc = text
         if name == self.assistant.coordinator.name:
             tool_name = text.split()[0].split("{")[0] if text.split() else ""
             if tool_name.startswith("ask_"):
@@ -257,7 +330,7 @@ class Repl:
 
     def _on_tool_output(self, name: str, tool_name: str, output: str) -> None:
         """Event: a tool finished; print its output, capped and styled
-        (diffs in color for edit_file).
+        (diffs in color for edit_file), then the refreshed context bar.
 
         Args:
             name: The agent that ran the tool.
@@ -265,7 +338,12 @@ class Repl:
             output: The tool's output text.
         """
         self._cleanup_stream()
+        if self._status_override is not None:
+            self._status_override += estimate_tokens(
+                self._activity_desc
+            ) + estimate_tokens(output)
         if tool_name.startswith("ask_"):
+            self.console.print(f"[dim]{self._bar_text()}[/dim]")
             return
         lines = output.splitlines()
         capped = "\n".join(lines[: self.max_output_lines])
@@ -275,6 +353,7 @@ class Repl:
             self.console.print(_diff_text(capped))
         else:
             self.console.print(Text(capped, style="dim"))
+        self.console.print(f"[dim]{self._bar_text()}[/dim]")
 
     def _on_stop(
         self,
@@ -301,13 +380,17 @@ class Repl:
             self._tokens[name] = self._tokens.get(name, 0) + estimate_tokens(content)
             self._estimated[name] = True
         if not produced_text or not content:
-            self._live.update(Text(f"• {name} thought for {elapsed:.1f}s", style="dim"))
+            self._live.update(
+                self._with_bar(
+                    Text(f"• {name} thought for {elapsed:.1f}s", style="dim")
+                )
+            )
             self._live.stop()
             self._live = None
             self._buffer = ""
             return
         if self._is_root():
-            self._live.update(Markdown(content))
+            self._live.update(self._with_bar(Markdown(content)))
         else:
             total = time.monotonic() - self._run_start.get(
                 name, time.monotonic() - elapsed
@@ -318,12 +401,14 @@ class Repl:
                 prefix = "~" if self._estimated.get(name) else ""
                 subtitle += f" · {prefix}{_format_tokens(tokens)} tok"
             self._live.update(
-                Panel(
-                    Markdown(content),
-                    title=name,
-                    subtitle=subtitle,
-                    border_style="dim",
-                    expand=False,
+                self._with_bar(
+                    Panel(
+                        Markdown(content),
+                        title=name,
+                        subtitle=subtitle,
+                        border_style="dim",
+                        expand=False,
+                    )
                 )
             )
         self._live.stop()

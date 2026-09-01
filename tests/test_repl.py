@@ -1,4 +1,5 @@
 import json
+import re
 import time
 from io import StringIO
 
@@ -8,7 +9,7 @@ from fakes import ScriptedClient
 from radix import Agent, Assistant, AutoApproveGate, Usage
 from radix.builtin import write_file
 from radix.messages import ChatResult, ToolCall
-from radix.repl import Repl
+from radix.repl import Repl, _format_tokens
 
 
 # Tests for the Repl: slash commands, live event rendering, undo flow.
@@ -48,6 +49,33 @@ def run_repl_captured(assistant, inputs):
     )()
     repl.run()
     return repl, io
+
+
+def make_recording_repl(assistant, inputs):
+    captured = {"toolbar": None}
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console)
+
+    def prompt(*_a, **_k):
+        captured["toolbar"] = _k.get("bottom_toolbar")
+        return inputs.pop(0)
+
+    repl._session = type("S", (), {"prompt": staticmethod(prompt)})()
+    return repl, captured
+
+
+def bar_text(captured):
+    toolbar = captured["toolbar"]
+    assert toolbar is not None, "bottom_toolbar was never requested"
+    return "".join(part for _, part in toolbar())
+
+
+def status_messages(assistant):
+    return [
+        {"role": "system", "content": assistant.coordinator.system_prompt},
+        *assistant.coordinator.history,
+    ]
 
 
 def test_repl_chat_and_commands():
@@ -152,6 +180,110 @@ def test_repl_compact_nothing_to_compact():
     assistant = make_assistant([])
     _, io = run_repl_captured(assistant, ["/compact", "/exit"])
     assert "nothing to compact" in io.getvalue()
+
+
+def test_repl_status_bar_shows_context():
+    assistant = make_assistant([ChatResult(content="answer one")])
+    repl, captured = make_recording_repl(assistant, ["first", "/exit"])
+    repl.run()
+
+    messages = status_messages(assistant)
+    used = assistant.context.message_tokens(messages)
+    budget = assistant.context.budget
+    bar = bar_text(captured)
+    assert f"context: {_format_tokens(used)} / {_format_tokens(budget)} tok" in bar
+    assert f"· {len(messages)} messages" in bar
+    assert f"· {round(100 * used / budget)}%" in bar
+
+
+def test_repl_status_bar_grows_with_history():
+    single = make_assistant([ChatResult(content="one")])
+    repl_one, captured_one = make_recording_repl(single, ["first", "/exit"])
+    repl_one.run()
+    used_one = single.context.message_tokens(status_messages(single))
+
+    assistant = make_assistant([ChatResult(content="one"), ChatResult(content="two")])
+    repl, captured = make_recording_repl(assistant, ["first", "second", "/exit"])
+    repl.run()
+    used_two = assistant.context.message_tokens(status_messages(assistant))
+
+    assert used_two > used_one
+    assert f"context: {_format_tokens(used_two)}" in bar_text(captured)
+
+
+def test_repl_status_bar_after_undo_all():
+    assistant = make_assistant([ChatResult(content="hi")])
+    repl, captured = make_recording_repl(assistant, ["hello", "/undo all", "/exit"])
+    repl.run()
+
+    assert assistant.coordinator.history == []
+    messages = [{"role": "system", "content": assistant.coordinator.system_prompt}]
+    used = assistant.context.message_tokens(messages)
+    bar = bar_text(captured)
+    assert f"context: {_format_tokens(used)}" in bar
+    assert f"· 1 messages · {round(100 * used / assistant.context.budget)}%" in bar
+
+
+def test_repl_status_bar_after_compact():
+    assistant = make_assistant(
+        [
+            ChatResult(content="one"),
+            ChatResult(content="two"),
+            ChatResult(content="three"),
+        ]
+    )
+    repl, captured = make_recording_repl(
+        assistant, ["first", "second", "third", "/compact", "/exit"]
+    )
+    repl.run()
+
+    history = assistant.coordinator.history
+    assert len(history) == 5
+    assert history[0]["role"] == "system"
+    used = assistant.context.message_tokens(status_messages(assistant))
+    bar = bar_text(captured)
+    assert f"context: {_format_tokens(used)}" in bar
+    assert f"· {len(status_messages(assistant))} messages" in bar
+
+
+def _parse_tokens(text):
+    if text.endswith("k"):
+        return int(float(text[:-1]) * 1000)
+    return int(text)
+
+
+def test_repl_status_bar_grows_across_tool_rounds(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("v0")
+    edit = lambda content: ChatResult(  # noqa: E731
+        tool_calls=[
+            ToolCall(
+                id="c",
+                name="write_file",
+                raw_arguments=json.dumps({"path": str(path), "content": content}),
+            )
+        ]
+    )
+    assistant = make_assistant(
+        [edit("v1"), edit("v2"), ChatResult(content="final")],
+        tools=[write_file],
+    )
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console)
+    inputs = ["change it", "/exit"]
+    repl._session = type(
+        "S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))}
+    )()
+    repl.run()
+    out = io.getvalue()
+
+    bars = [
+        _parse_tokens(used)
+        for used in re.findall(r"context: ([\d.]+k|\d+) / [\d.]+k tok", out)
+    ]
+    assert len(bars) >= 3
+    assert any(b < n for b, n in zip(bars, bars[1:]))
 
 
 def test_repl_survives_errors():
