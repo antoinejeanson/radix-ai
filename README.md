@@ -136,8 +136,9 @@ Then grow it: give the coordinator tools for quick jobs, and add specialized
 sub-agents when tasks deserve their own context and expertise. That's the
 whole framework — everything below is just composition.
 
-Inside the REPL: `/help` for commands, `/undo` to revert the last turn (files
-and conversation), `Ctrl+D` to exit.
+Inside the REPL: `/help` for commands, `/compact` to summarize the old
+conversation right away (reducing the context without waiting for the budget),
+`/undo` to revert the last turn (files and conversation), `Ctrl+D` to exit.
 
 ---
 
@@ -220,7 +221,10 @@ Every change made by `edit_file` and `write_file` is tracked per turn, so
 `/undo` in the REPL restores the affected files to their pre-turn state (and
 deletes files the assistant created). `/undo N` reverts the last N turns,
 `/undo all` reverts everything. Changes made through `run_shell` or your own
-tools are not tracked.
+tools are not tracked. When the conversation runs long, use `/compact` (or
+`assistant.compact()`) to summarize the oldest turns immediately; compaction
+happens automatically at the token budget, but the command does it on demand.
+Note that summarized turns are gone: `/undo` cannot rewind past them.
 
 ### Permissions
 

@@ -106,25 +106,27 @@ class ContextManager:
             messages: The conversation to check.
 
         Returns:
-            The same list when within budget, else a compacted list where
-            the oldest messages were replaced by a summary.
+            The same list when within budget, else `compact`'s result.
         """
         if self.message_tokens(messages) <= self.budget:
             return messages
-        return self._compact(messages)
+        return self.compact(messages)
 
-    def _compact(self, messages: list[Message]) -> list[Message]:
-        """Summarize the oldest messages into a single system message.
+    def compact(self, messages: list[Message]) -> list[Message]:
+        """Compact a conversation eagerly, summarizing the oldest messages.
 
-        The leading system prompt (if any) and the `keep_recent` newest
-        messages stay verbatim. If the summary does not fit the budget, the
-        oldest kept messages are dropped one by one.
+        This is `prepare` without the budget check: the oldest messages are
+        summarized even when the list is still within budget. The leading
+        system prompt (if any) and the `keep_recent` newest messages stay
+        verbatim, and the result is trimmed to fit the budget when the
+        summary is not enough.
 
         Args:
-            messages: Conversation exceeding the budget.
+            messages: The conversation to compact.
 
         Returns:
-            A new, smaller message list.
+            A new, smaller message list — or the same list when there is
+            nothing to compact.
         """
         system = (
             messages[0] if messages and messages[0].get("role") == "system" else None

@@ -143,6 +143,31 @@ class Agent:
         stateful agents; has no effect on the tool set or gates)."""
         self.history.clear()
 
+    def compact(self) -> bool:
+        """Manually compact the saved conversation now.
+
+        Summarizes the oldest messages in `history` right away — even when
+        the history is still within the token budget — and stores the
+        reduced history for subsequent runs. Only meaningful for stateful
+        agents: without one, or without a `context` manager, nothing
+        happens. A compaction cannot be undone: the summarized messages are
+        gone from the history.
+
+        Returns:
+            True when the history was rewritten to a smaller list.
+        """
+        if not self.stateful or not self.context or not self.history:
+            return False
+        working: list[Message] = []
+        if self.system_prompt:
+            working.append(system_message(self.system_prompt))
+        working.extend(self.history)
+        compacted = self.context.compact(working)
+        if compacted is working:
+            return False
+        self.history = compacted[1:] if self.system_prompt else compacted
+        return True
+
     def run(self, task: str, *, events: Events | None = None) -> str:
         """Run one task and return the final answer.
 

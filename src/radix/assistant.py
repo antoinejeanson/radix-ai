@@ -212,6 +212,21 @@ class Assistant:
             del self.coordinator.history[result.history_depth :]
         return result
 
+    def compact(self) -> bool:
+        """Manually compact the coordinator's saved conversation now.
+
+        Summarizes the oldest messages in the coordinator's history right
+        away — even when still within the token budget — so subsequent
+        turns send less context. Sub-agents are stateless and keep no
+        history, so only the coordinator is affected. The compaction
+        cannot be undone: summarized messages are gone from the history.
+
+        Returns:
+            True when the coordinator's history was rewritten to a
+            smaller list.
+        """
+        return self.coordinator.compact()
+
     def reset(self) -> None:
         """Reset the assistant: forget the conversation and clear the undo
         log. The model client, tools and gates stay configured."""

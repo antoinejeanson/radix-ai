@@ -127,6 +127,33 @@ def test_repl_undo_all_reverts_everything(tmp_path):
     assert len(assistant.undo_log) == 0
 
 
+def test_repl_compact_command():
+    assistant = make_assistant(
+        [
+            ChatResult(content="one"),
+            ChatResult(content="two"),
+            ChatResult(content="three"),
+            ChatResult(content="MANUAL SUMMARY"),
+        ]
+    )
+    repl, io = run_repl_captured(
+        assistant, ["first", "second", "third", "/compact", "/exit"]
+    )
+
+    history = assistant.coordinator.history
+    assert len(history) == 5
+    assert history[0]["role"] == "system"
+    assert "MANUAL SUMMARY" in history[0]["content"]
+    out = io.getvalue()
+    assert "context compacted: 6 messages → 5" in out
+
+
+def test_repl_compact_nothing_to_compact():
+    assistant = make_assistant([])
+    _, io = run_repl_captured(assistant, ["/compact", "/exit"])
+    assert "nothing to compact" in io.getvalue()
+
+
 def test_repl_survives_errors():
     class BrokenClient:
         def chat_stream(self, *a, **k):

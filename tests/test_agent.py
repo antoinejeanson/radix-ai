@@ -2,6 +2,7 @@ import pytest
 
 from fakes import ScriptedClient
 from radix import Agent, AutoApproveGate, DenyGate, Events, Usage, tool
+from radix.context import ContextManager
 from radix.messages import ChatResult, ToolCall
 
 
@@ -266,3 +267,70 @@ def test_run_without_client_raises():
     agent = Agent("lonely")
     with pytest.raises(RuntimeError, match="no client"):
         agent.run("hello")
+
+
+def make_stateful_agent(results, keep_recent=2):
+    client = ScriptedClient(results)
+    context = ContextManager(
+        client,
+        max_context_tokens=100000,
+        reserve_output_tokens=0,
+        keep_recent=keep_recent,
+    )
+    agent = Agent(
+        "tester",
+        system_prompt="be brief",
+        client=client,
+        context=context,
+        stateful=True,
+        permission_gate=AutoApproveGate(),
+    )
+    return agent, client
+
+
+def test_compact_rewrites_history():
+    agent, client = make_stateful_agent(
+        [
+            ChatResult(content="one"),
+            ChatResult(content="two"),
+            ChatResult(content="MANUAL SUMMARY"),
+            ChatResult(content="three"),
+        ]
+    )
+    agent.run("first")
+    agent.run("second")
+
+    assert agent.compact() is True
+
+    assert len(agent.history) == 3
+    assert agent.history[0]["role"] == "system"
+    assert "MANUAL SUMMARY" in agent.history[0]["content"]
+    assert agent.history[1:] == [
+        {"role": "user", "content": "second"},
+        {"role": "assistant", "content": "two"},
+    ]
+
+    agent.run("third")
+    sent = client.stream_calls[2]["messages"]
+    assert sent[0] == {"role": "system", "content": "be brief"}
+    assert sent[1]["role"] == "system"
+    assert "MANUAL SUMMARY" in sent[1]["content"]
+
+
+def test_compact_noop_when_history_is_short():
+    agent, _ = make_stateful_agent([ChatResult(content="one")])
+    agent.run("first")
+
+    assert agent.compact() is False
+
+    assert agent.history == [
+        {"role": "user", "content": "first"},
+        {"role": "assistant", "content": "one"},
+    ]
+
+
+def test_compact_noop_without_context_or_state():
+    agent, _ = make_agent([ChatResult(content="hi")])
+    agent.run("hello")
+
+    assert agent.compact() is False

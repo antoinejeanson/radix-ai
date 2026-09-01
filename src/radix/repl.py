@@ -19,14 +19,15 @@ if TYPE_CHECKING:
     from .assistant import Assistant
     from .messages import Usage
 
-# Repl: the interactive CLI — prompt loop, slash commands (/help, /undo,
-# /exit), and live streaming views of everything the agents do.
+# Repl: the interactive CLI — prompt loop, slash commands (/help, /compact,
+# /undo, /exit), and live streaming views of everything the agents do.
 HELP_TEXT = """commands:
-  /help   show this help
-  /undo   revert the last turn: restore changed files, rewind the conversation
-  /undo N revert the last N turns
+  /help    show this help
+  /compact summarize the old conversation now, reducing the context
+  /undo    revert the last turn: restore changed files, rewind the conversation
+  /undo N  revert the last N turns
   /undo all  revert everything (files and conversation)
-  /exit   quit (Ctrl+D also works)"""
+  /exit    quit (Ctrl+D also works)"""
 
 MAX_OUTPUT_LINES = 40
 
@@ -99,8 +100,9 @@ class Repl:
     def run(self) -> None:
         """Run the prompt loop until the user exits.
 
-        Accepts messages, slash commands (/help, /undo [N|all], /exit) and
-        Ctrl+D. Blocks, and returns when the user quits.
+        Accepts messages, slash commands (/help, /compact,
+        /undo [N|all], /exit) and Ctrl+D. Blocks, and returns when the
+        user quits.
         """
         self.console.print("[bold]Radix[/bold] — type /help for help, Ctrl+D to exit")
         while True:
@@ -144,6 +146,8 @@ class Repl:
             return True
         if command == "/help":
             self.console.print(HELP_TEXT)
+        elif command == "/compact":
+            self._compact()
         elif command == "/undo":
             self._undo(words[1:])
         else:
@@ -178,6 +182,23 @@ class Repl:
             )
         if not result.restored and result.history_depth is None:
             self.console.print("[dim]nothing to undo[/dim]")
+
+    def _compact(self) -> None:
+        """Implement `/compact`: summarize the old conversation now.
+
+        Delegates to the coordinator's context manager so the very next
+        model round sends less context.
+        """
+        before = len(self.assistant.coordinator.history)
+        if self.assistant.compact():
+            after = len(self.assistant.coordinator.history)
+            self.console.print(
+                f"[dim]context compacted: {before} messages → {after}[/dim]"
+            )
+        else:
+            self.console.print(
+                "[dim]nothing to compact — the conversation is too short[/dim]"
+            )
 
     def _is_root(self) -> bool:
         """Whether the currently streaming agent is the coordinator.

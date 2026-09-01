@@ -53,6 +53,26 @@ def test_prepare_compacts_with_summary():
     assert cm.message_tokens(out) <= cm.budget
 
 
+def test_compact_is_unconditional():
+    cm, client = make_manager([ChatResult(content="SUMMARY OF OLD")], budget=100000)
+    messages = build_messages()
+    assert cm.message_tokens(messages) <= cm.budget
+
+    out = cm.compact(messages)
+
+    assert len(client.complete_calls) == 1
+    assert out is not messages
+    assert out[0] == messages[0]
+    assert out[1]["content"] == "[Summary of the earlier conversation]\nSUMMARY OF OLD"
+    assert out[2:] == messages[-2:]
+
+
+def test_compact_returns_same_list_when_body_too_small():
+    cm, _ = make_manager([], budget=100000)
+    messages = build_messages(n_body=2)
+    assert cm.compact(messages) is messages
+
+
 def test_prepare_fallback_when_summary_fails():
     cm, _ = make_manager([])
     out = cm.prepare(build_messages())
