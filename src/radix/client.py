@@ -87,7 +87,9 @@ class ChatStream:
                 content_parts.append(delta.content)
                 yield delta.content
             for tc in delta.tool_calls or []:
-                slot = call_slots.setdefault(tc.index, {"id": "", "name": "", "arguments": ""})
+                slot = call_slots.setdefault(
+                    tc.index, {"id": "", "name": "", "arguments": ""}
+                )
                 if tc.id:
                     slot["id"] = tc.id
                 if tc.function:
@@ -106,7 +108,9 @@ class ChatStream:
             if slot["name"]
         ]
         self._result = ChatResult(
-            content="".join(content_parts), tool_calls=tool_calls, usage=_to_usage(raw_usage)
+            content="".join(content_parts),
+            tool_calls=tool_calls,
+            usage=_to_usage(raw_usage),
         )
 
     @property
@@ -133,7 +137,9 @@ class Client:
         openai_client: OpenAI | None = None,
     ) -> None:
         self.model = model
-        self._api = openai_client or OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
+        self._api = openai_client or OpenAI(
+            base_url=base_url, api_key=api_key, timeout=timeout
+        )
 
     def complete(
         self, messages: list[Message], tools: list[dict[str, Any]] | None = None

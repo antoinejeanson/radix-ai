@@ -47,7 +47,11 @@ def test_plain_answer():
 def test_tool_call_loop():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 2, "b": 3}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="add", raw_arguments='{"a": 2, "b": 3}')
+                ]
+            ),
             ChatResult(content="5"),
         ]
     )
@@ -65,7 +69,11 @@ def test_events_callbacks():
     usage = Usage(prompt_tokens=5, completion_tokens=2, total_tokens=7)
     agent, _ = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')
+                ]
+            ),
             ChatResult(content="done", usage=usage),
         ]
     )
@@ -78,8 +86,12 @@ def test_events_callbacks():
         on_start=starts.append,
         on_delta=lambda name, text: deltas.append((name, text)),
         on_activity=lambda name, text: activity.append((name, text)),
-        on_tool_output=lambda name, tool_name, output: outputs.append((name, tool_name, output)),
-        on_stop=lambda name, elapsed, produced, usage: stops.append((name, produced, usage)),
+        on_tool_output=lambda name, tool_name, output: outputs.append(
+            (name, tool_name, output)
+        ),
+        on_stop=lambda name, elapsed, produced, usage: stops.append(
+            (name, produced, usage)
+        ),
     )
     agent.run("go", events=events)
     assert starts == ["tester", "tester"]
@@ -105,7 +117,9 @@ def test_unknown_tool():
 def test_invalid_json_arguments():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments="not json")]),
+            ChatResult(
+                tool_calls=[ToolCall(id="c1", name="add", raw_arguments="not json")]
+            ),
             ChatResult(content="fixed"),
         ]
     )
@@ -116,7 +130,9 @@ def test_invalid_json_arguments():
 def test_bad_arguments_type():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": "x"}')]),
+            ChatResult(
+                tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": "x"}')]
+            ),
             ChatResult(content="fixed"),
         ]
     )
@@ -127,7 +143,11 @@ def test_bad_arguments_type():
 def test_permission_denied_is_reported_to_model():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="ok"),
         ],
         tools=[shell],
@@ -140,7 +160,11 @@ def test_permission_denied_is_reported_to_model():
 def test_gated_tool_runs_when_approved():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="done"),
         ],
         tools=[shell],
@@ -153,7 +177,11 @@ def test_gated_tool_runs_when_approved():
 def test_gated_tool_is_denied_when_gate_says_no():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="ok"),
         ],
         tools=[shell],
@@ -166,7 +194,13 @@ def test_gated_tool_is_denied_when_gate_says_no():
 def test_tool_gate_denies_even_with_permissive_global_gate():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}'
+                    )
+                ]
+            ),
             ChatResult(content="ok"),
         ],
         tools=[shell],
@@ -180,7 +214,11 @@ def test_tool_gate_denies_even_with_permissive_global_gate():
 def test_tool_gate_replaces_global_gate():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="done"),
         ],
         tools=[shell],
@@ -192,7 +230,9 @@ def test_tool_gate_replaces_global_gate():
 
 
 def test_max_tool_rounds_forces_final_answer():
-    loop_result = ChatResult(tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')])
+    loop_result = ChatResult(
+        tool_calls=[ToolCall(id="c1", name="add", raw_arguments='{"a": 1, "b": 1}')]
+    )
     agent, client = make_agent(
         [loop_result, loop_result, ChatResult(content="final")], max_tool_rounds=2
     )
@@ -205,7 +245,9 @@ def test_max_tool_rounds_forces_final_answer():
 def test_max_tool_output_chars_truncates_tool_output():
     agent, client = make_agent(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="verbose", raw_arguments="{}")]),
+            ChatResult(
+                tool_calls=[ToolCall(id="c1", name="verbose", raw_arguments="{}")]
+            ),
             ChatResult(content="done"),
         ],
         tools=[verbose],

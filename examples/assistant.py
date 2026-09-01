@@ -9,7 +9,14 @@ Then run this file:
     uv run python examples/assistant.py
 """
 
-from radix import Agent, Assistant, AutoApproveGate, Client, LlmAdvisoryGate, LlmAutoSafetyGate
+from radix import (
+    Agent,
+    Assistant,
+    AutoApproveGate,
+    Client,
+    LlmAdvisoryGate,
+    LlmAutoSafetyGate,
+)
 from radix.builtin import edit_file, fetch_url, read_file, run_shell, write_file
 
 # Trusted machine: never prompt for file tools. The tool_gates below

@@ -67,7 +67,9 @@ class ContextManager:
         return self._compact(messages)
 
     def _compact(self, messages: list[Message]) -> list[Message]:
-        system = messages[0] if messages and messages[0].get("role") == "system" else None
+        system = (
+            messages[0] if messages and messages[0].get("role") == "system" else None
+        )
         body = messages[1:] if system else list(messages)
         if len(body) <= self.keep_recent:
             return messages

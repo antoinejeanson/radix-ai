@@ -5,7 +5,6 @@ import pytest
 from openai import APIStatusError
 
 from radix import DEFAULT_BASE_URL, Client, Usage
-from radix.client import ChatStream
 from radix.messages import ChatResult
 
 
@@ -66,7 +65,9 @@ def text(s):
 
 
 def toolc(index, id=None, name=None, arguments=None):
-    return FakeChunk(FakeDelta(tool_calls=[FakeToolCallDelta(index, id, name, arguments)]))
+    return FakeChunk(
+        FakeDelta(tool_calls=[FakeToolCallDelta(index, id, name, arguments)])
+    )
 
 
 def test_default_base_url_targets_llama_cpp():
@@ -138,20 +139,28 @@ def test_stream_requests_include_usage():
 
 
 def test_stream_captures_usage_chunk():
-    usage = types.SimpleNamespace(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    usage = types.SimpleNamespace(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
     chunks = [text("hi"), FakeChunk(usage=usage)]
     client = make_client(FakeCompletions(chunks=chunks))
     stream = client.chat_stream([{"role": "user", "content": "hi"}])
     assert list(stream) == ["hi"]
-    assert stream.result.usage == Usage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+    assert stream.result.usage == Usage(
+        prompt_tokens=10, completion_tokens=5, total_tokens=15
+    )
 
 
 def test_stream_retries_when_stream_options_rejected():
     class RejectingCompletions(FakeCompletions):
         def create(self, **kwargs):
             if "stream_options" in kwargs:
-                response = httpx2.Response(400, request=httpx2.Request("POST", "http://test"))
-                raise APIStatusError("stream_options is not supported", response=response, body=None)
+                response = httpx2.Response(
+                    400, request=httpx2.Request("POST", "http://test")
+                )
+                raise APIStatusError(
+                    "stream_options is not supported", response=response, body=None
+                )
             return super().create(**kwargs)
 
     completions = RejectingCompletions(chunks=[text("ok")])
@@ -165,8 +174,12 @@ def test_stream_retries_when_stream_options_rejected():
 def test_stream_raises_other_400_errors():
     class AlwaysRejecting(FakeCompletions):
         def create(self, **kwargs):
-            response = httpx2.Response(400, request=httpx2.Request("POST", "http://test"))
-            raise APIStatusError("something else is wrong", response=response, body=None)
+            response = httpx2.Response(
+                400, request=httpx2.Request("POST", "http://test")
+            )
+            raise APIStatusError(
+                "something else is wrong", response=response, body=None
+            )
 
     client = make_client(AlwaysRejecting(chunks=[text("ok")]))
     stream = client.chat_stream([{"role": "user", "content": "hi"}])

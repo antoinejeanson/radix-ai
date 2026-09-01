@@ -117,9 +117,9 @@ tools — just you and the model:
 from radix import Assistant
 
 assistant = Assistant(
-    model="radix",                        # llama.cpp accepts any name unless --alias is set
+    model="radix",  # llama.cpp accepts any name unless --alias is set
     base_url="http://localhost:8080/v1",  # llama.cpp default
-    max_context_tokens=8192,              # match your llama.cpp -c value
+    max_context_tokens=8192,  # match your llama.cpp -c value
 )
 
 if __name__ == "__main__":
@@ -151,6 +151,7 @@ the type hints:
 
 ```python
 from radix import tool
+
 
 @tool
 def word_count(path: str) -> str:
@@ -233,6 +234,7 @@ class OnlyLocalhostGate:
             return "localhost" in arguments.get("url", "")
         return True
 
+
 assistant = Assistant(agents=[...], permission_gate=OnlyLocalhostGate())
 ```
 
@@ -245,7 +247,7 @@ just the tools you care about:
 
 ```python
 assistant = Assistant(
-    permission_gate=AutoApproveGate(),          # trust everything by default
+    permission_gate=AutoApproveGate(),  # trust everything by default
     tool_gates={"run_shell": CliPermissionGate()},  # ...but always ask for shell
 )
 ```
@@ -286,10 +288,10 @@ tool; everything else keeps the `permission_gate`:
 assistant = Assistant(
     client=client,
     tools=[run_shell, fetch_url],
-    permission_gate=CliPermissionGate(),          # default for everything else
+    permission_gate=CliPermissionGate(),  # default for everything else
     tool_gates={
-        "run_shell": LlmAutoSafetyGate(client),   # `ls` runs, `rm -rf /` auto-denied
-        "fetch_url": LlmAdvisoryGate(client),     # LLM advises, you decide
+        "run_shell": LlmAutoSafetyGate(client),  # `ls` runs, `rm -rf /` auto-denied
+        "fetch_url": LlmAdvisoryGate(client),  # LLM advises, you decide
     },
 )
 ```

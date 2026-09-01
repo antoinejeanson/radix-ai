@@ -143,7 +143,9 @@ class Repl:
         if len(self.assistant.coordinator.history) < before:
             self.console.print("[dim]conversation rewound[/dim]")
         if result.failed:
-            self.console.print(f"[red]could not restore:[/red] {', '.join(result.failed)}")
+            self.console.print(
+                f"[red]could not restore:[/red] {', '.join(result.failed)}"
+            )
         if not result.restored and result.history_depth is None:
             self.console.print("[dim]nothing to undo[/dim]")
 
@@ -193,7 +195,11 @@ class Repl:
             self.console.print(Text(capped, style="dim"))
 
     def _on_stop(
-        self, name: str, elapsed: float, produced_text: bool, usage: "Usage | None" = None
+        self,
+        name: str,
+        elapsed: float,
+        produced_text: bool,
+        usage: "Usage | None" = None,
     ) -> None:
         if self._agent != name or self._live is None:
             return
@@ -212,7 +218,9 @@ class Repl:
         if self._is_root():
             self._live.update(Markdown(content))
         else:
-            total = time.monotonic() - self._run_start.get(name, time.monotonic() - elapsed)
+            total = time.monotonic() - self._run_start.get(
+                name, time.monotonic() - elapsed
+            )
             subtitle = f"{total:.1f}s"
             tokens = self._tokens.get(name, 0)
             if tokens:

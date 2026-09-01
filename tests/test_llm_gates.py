@@ -1,5 +1,13 @@
 from fakes import ScriptedClient
-from radix import Agent, AutoApproveGate, CliPermissionGate, DenyGate, LlmAdvisoryGate, LlmAutoSafetyGate, tool
+from radix import (
+    Agent,
+    AutoApproveGate,
+    CliPermissionGate,
+    DenyGate,
+    LlmAdvisoryGate,
+    LlmAutoSafetyGate,
+    tool,
+)
 from radix.messages import ChatResult, ToolCall
 
 
@@ -31,7 +39,11 @@ def test_auto_gate_checks_every_tool():
 
 def test_auto_gate_approves_safe_call_without_prompt():
     prompts: list[str] = []
-    gate, _, lines = gate_for(LlmAutoSafetyGate, "SAFE\nread-only listing", printer=lambda s: prompts.append(s))
+    gate, _, lines = gate_for(
+        LlmAutoSafetyGate,
+        "SAFE\nread-only listing",
+        printer=lambda s: prompts.append(s),
+    )
     assert gate.check(shell, {"command": "ls"}) is True
     assert any("SAFE" in line and "read-only listing" in line for line in prompts)
 
@@ -51,12 +63,22 @@ def test_auto_gate_never_prompts_by_default():
 
 
 def test_auto_gate_confirm_unsafe_approves_on_yes():
-    gate, _, _ = gate_for(LlmAutoSafetyGate, "DANGEROUS\nwipes the disk", confirm_unsafe=True, input_fn=lambda p: "y")
+    gate, _, _ = gate_for(
+        LlmAutoSafetyGate,
+        "DANGEROUS\nwipes the disk",
+        confirm_unsafe=True,
+        input_fn=lambda p: "y",
+    )
     assert gate.check(shell, {"command": "rm -rf /"}) is True
 
 
 def test_auto_gate_confirm_unsafe_denies_on_no():
-    gate, _, _ = gate_for(LlmAutoSafetyGate, "DANGEROUS\nwipes the disk", confirm_unsafe=True, input_fn=lambda p: "n")
+    gate, _, _ = gate_for(
+        LlmAutoSafetyGate,
+        "DANGEROUS\nwipes the disk",
+        confirm_unsafe=True,
+        input_fn=lambda p: "n",
+    )
     assert gate.check(shell, {"command": "rm -rf /"}) is False
 
 
@@ -64,7 +86,12 @@ def test_auto_gate_confirm_unsafe_skips_prompt_when_safe():
     def explode(prompt: str) -> str:
         raise AssertionError("safe verdicts never prompt")
 
-    gate, _, _ = gate_for(LlmAutoSafetyGate, "SAFE\nread-only listing", confirm_unsafe=True, input_fn=explode)
+    gate, _, _ = gate_for(
+        LlmAutoSafetyGate,
+        "SAFE\nread-only listing",
+        confirm_unsafe=True,
+        input_fn=explode,
+    )
     assert gate.check(shell, {"command": "ls"}) is True
 
 
@@ -100,7 +127,9 @@ def test_advisory_gate_shows_verdict_and_defers_to_user():
     client = ScriptedClient([ChatResult(content="SAFE\nread-only listing")])
     gate = LlmAdvisoryGate(
         client,
-        base_gate=CliPermissionGate(input_fn=lambda p: prompts.append(p) or "y", printer=print),
+        base_gate=CliPermissionGate(
+            input_fn=lambda p: prompts.append(p) or "y", printer=print
+        ),
         printer=lambda s: prompts.append("verdict:" + s),
     )
     assert gate.check(shell, {"command": "ls"}) is True
@@ -141,13 +170,20 @@ def test_advisory_gate_checks_every_tool():
 def test_agent_runs_tool_when_safety_check_says_safe():
     client = ScriptedClient(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="SAFE\nread-only listing"),
             ChatResult(content="done"),
         ]
     )
     agent = Agent(
-        "tester", system_prompt="be brief", tools=[shell], client=client,
+        "tester",
+        system_prompt="be brief",
+        tools=[shell],
+        client=client,
         permission_gate=LlmAutoSafetyGate(client, printer=lambda s: None),
     )
     assert agent.run("list files") == "done"
@@ -157,13 +193,22 @@ def test_agent_runs_tool_when_safety_check_says_safe():
 def test_agent_denies_tool_when_safety_check_says_dangerous():
     client = ScriptedClient(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}'
+                    )
+                ]
+            ),
             ChatResult(content="DANGEROUS\nrecursively deletes files"),
             ChatResult(content="ok"),
         ]
     )
     agent = Agent(
-        "tester", system_prompt="be brief", tools=[shell], client=client,
+        "tester",
+        system_prompt="be brief",
+        tools=[shell],
+        client=client,
         permission_gate=LlmAutoSafetyGate(client, printer=lambda s: None),
     )
     assert agent.run("clean up") == "ok"
@@ -173,13 +218,20 @@ def test_agent_denies_tool_when_safety_check_says_dangerous():
 def test_tool_gate_llm_safety_replaces_global_gate():
     client = ScriptedClient(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="shell", raw_arguments='{"command": "ls"}')
+                ]
+            ),
             ChatResult(content="SAFE\nread-only listing"),
             ChatResult(content="done"),
         ]
     )
     agent = Agent(
-        "tester", system_prompt="be brief", tools=[shell], client=client,
+        "tester",
+        system_prompt="be brief",
+        tools=[shell],
+        client=client,
         permission_gate=DenyGate(),
         tool_gates={"shell": LlmAutoSafetyGate(client, printer=lambda s: None)},
     )
@@ -190,13 +242,22 @@ def test_tool_gate_llm_safety_replaces_global_gate():
 def test_tool_gate_llm_safety_denies_call():
     client = ScriptedClient(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}')]),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c1", name="shell", raw_arguments='{"command": "rm -rf /"}'
+                    )
+                ]
+            ),
             ChatResult(content="DANGEROUS\nwipes the disk"),
             ChatResult(content="ok"),
         ]
     )
     agent = Agent(
-        "tester", system_prompt="be brief", tools=[shell], client=client,
+        "tester",
+        system_prompt="be brief",
+        tools=[shell],
+        client=client,
         permission_gate=AutoApproveGate(),
         tool_gates={"shell": LlmAutoSafetyGate(client, printer=lambda s: None)},
     )

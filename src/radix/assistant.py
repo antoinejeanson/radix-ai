@@ -119,7 +119,7 @@ class Assistant:
         the conversation. Returns what was restored."""
         result = self.undo_log.undo(turns)
         if result.history_depth is not None:
-            del self.coordinator.history[result.history_depth:]
+            del self.coordinator.history[result.history_depth :]
         return result
 
     def reset(self) -> None:

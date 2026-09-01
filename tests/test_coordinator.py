@@ -7,7 +7,12 @@ from radix.messages import ChatResult, ToolCall
 
 def make_setup(results):
     client = ScriptedClient(results)
-    coder = Agent("coder", description="Writes code.", system_prompt="you write code", client=client)
+    coder = Agent(
+        "coder",
+        description="Writes code.",
+        system_prompt="you write code",
+        client=client,
+    )
     coordinator = Coordinator(
         agents=[coder],
         client=client,
@@ -34,7 +39,13 @@ def test_delegation_flow_keeps_coordinator_context_clean():
     coordinator, _, client = make_setup(
         [
             ChatResult(
-                tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "write hello world"}')]
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="ask_coder",
+                        raw_arguments='{"task": "write hello world"}',
+                    )
+                ]
             ),
             ChatResult(content="print('hello')"),
             ChatResult(content="Here is the code: print('hello')"),
@@ -57,7 +68,9 @@ def test_history_only_user_and_final_answer():
     coordinator, _, _ = make_setup(
         [
             ChatResult(
-                tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')]
+                tool_calls=[
+                    ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')
+                ]
             ),
             ChatResult(content="sub answer"),
             ChatResult(content="final answer"),
@@ -76,7 +89,9 @@ def test_events_propagate_from_subagent():
     coordinator, _, _ = make_setup(
         [
             ChatResult(
-                tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')]
+                tool_calls=[
+                    ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')
+                ]
             ),
             ChatResult(content="sub answer"),
             ChatResult(content="final answer"),

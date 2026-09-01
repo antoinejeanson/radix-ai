@@ -17,7 +17,8 @@ SAFETY_SYSTEM_PROMPT = (
     "whether running it could harm the user: data loss, irreversible or destructive "
     "changes, expensive operations, or anything the user would not want to happen "
     "without asking first. Read-only, reversible, everyday operations are safe. "
-    "Write operation can also be safe if they edit or delete files that are part of the current assignment. "
+    "Write operation can also be safe if they edit or delete files that are "
+    "part of the current assignment. "
     "Reply with exactly two lines: the first line is SAFE or DANGEROUS, the second "
     "line is one short sentence saying why."
 )
@@ -42,7 +43,7 @@ def _extract_reason(text: str) -> str:
     lines = [line.strip() for line in text.strip().splitlines()]
     for index, line in enumerate(lines):
         if re.search(r"\b(SAFE|DANGEROUS)\b", line, re.IGNORECASE):
-            rest = [l for l in lines[index + 1 :] if l.strip()]
+            rest = [r for r in lines[index + 1 :] if r.strip()]
             return rest[0] if rest else ""
     return lines[0] if lines else ""
 
@@ -93,8 +94,13 @@ class LlmSafetyChecker:
     def check(self, tool: Tool, arguments: dict[str, Any]) -> SafetyVerdict:
         try:
             result = self._client.complete(
-                [system_message(self._system_prompt), user_message(self.describe(tool, arguments))]
+                [
+                    system_message(self._system_prompt),
+                    user_message(self.describe(tool, arguments)),
+                ]
             )
         except Exception as exc:
-            return SafetyVerdict(safe=False, reason=f"safety check failed: {exc}", checked=False)
+            return SafetyVerdict(
+                safe=False, reason=f"safety check failed: {exc}", checked=False
+            )
         return parse_verdict(result.content or "")

@@ -37,7 +37,10 @@ class CliPermissionGate:
 
     def check(self, tool: Tool, arguments: dict[str, Any]) -> bool:
         self._print(f"! Permission request: '{tool.name}' wants to run with arguments:")
-        self._print("  " + json.dumps(arguments, ensure_ascii=False, indent=2).replace("\n", "\n  "))
+        self._print(
+            "  "
+            + json.dumps(arguments, ensure_ascii=False, indent=2).replace("\n", "\n  ")
+        )
         answer = self._input("Allow this call? [y/N] ")
         return answer.strip().lower() in ("y", "yes")
 

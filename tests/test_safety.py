@@ -79,7 +79,10 @@ def test_client_error_fails_closed():
 
 def test_describe_contains_tool_and_arguments():
     checker, _ = make_checker("SAFE\nok")
-    assert checker.describe(run, {"command": "ls -la"}) == 'Tool: run\nArguments: {"command": "ls -la"}'
+    assert (
+        checker.describe(run, {"command": "ls -la"})
+        == 'Tool: run\nArguments: {"command": "ls -la"}'
+    )
 
 
 def test_describe_truncates_long_arguments():
@@ -97,4 +100,4 @@ def test_checker_sends_prompt_and_description():
     assert "safety reviewer" in call["messages"][0]["content"]
     assert call["messages"][1]["role"] == "user"
     assert "Tool: run" in call["messages"][1]["content"]
-    assert 'ls' in call["messages"][1]["content"]
+    assert "ls" in call["messages"][1]["content"]

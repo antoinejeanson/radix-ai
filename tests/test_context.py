@@ -1,12 +1,16 @@
 from fakes import ScriptedClient
 from radix.context import ContextManager, estimate_tokens
-from radix.messages import ChatResult, user_message, assistant_message, system_message
+from radix.messages import ChatResult, assistant_message, system_message, user_message
 
 
 def build_messages(n_body=8, size=100):
     messages = [system_message("sys " + "x" * size)]
     for i in range(n_body):
-        role_msg = user_message(f"msg{i} " + "y" * size) if i % 2 == 0 else assistant_message(f"ans{i} " + "z" * size)
+        role_msg = (
+            user_message(f"msg{i} " + "y" * size)
+            if i % 2 == 0
+            else assistant_message(f"ans{i} " + "z" * size)
+        )
         messages.append(role_msg)
     return messages
 

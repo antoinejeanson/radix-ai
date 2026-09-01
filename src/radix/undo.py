@@ -19,7 +19,10 @@ def _write_atomic(path: str, content: str) -> None:
 
 @dataclass
 class FileSnapshot:
-    """State of a file before a change. `content is None` means the file did not exist."""
+    """State of a file before a change.
+
+    `content is None` means the file did not exist.
+    """
 
     path: str
     content: str | None

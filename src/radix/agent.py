@@ -89,7 +89,8 @@ class Agent:
     def run(self, task: str, *, events: Events | None = None) -> str:
         if self.client is None:
             raise RuntimeError(
-                f"agent '{self.name}' has no client; pass it to an Assistant or set agent.client"
+                f"agent '{self.name}' has no client; pass it to an Assistant "
+                "or set agent.client"
             )
         working: list[Message] = []
         if self.system_prompt:
@@ -110,7 +111,10 @@ class Agent:
         return answer
 
     def _chat_round(
-        self, messages: list[Message], tools: list[dict[str, Any]] | None, events: Events | None
+        self,
+        messages: list[Message],
+        tools: list[dict[str, Any]] | None,
+        events: Events | None,
     ) -> ChatResult:
         if events and events.on_start:
             events.on_start(self.name)
@@ -123,7 +127,9 @@ class Agent:
                 events.on_delta(self.name, delta)
         result = stream.result
         if events and events.on_stop:
-            events.on_stop(self.name, time.monotonic() - started, produced_text, result.usage)
+            events.on_stop(
+                self.name, time.monotonic() - started, produced_text, result.usage
+            )
         return result
 
     def _loop(self, messages: list[Message], events: Events | None) -> str:
@@ -133,7 +139,9 @@ class Agent:
             result = self._chat_round(prepared, tool_schemas, events)
             if not result.tool_calls:
                 return result.content
-            messages.append(assistant_tool_call_message(result.content, result.tool_calls))
+            messages.append(
+                assistant_tool_call_message(result.content, result.tool_calls)
+            )
             for call in result.tool_calls:
                 if events and events.on_activity:
                     events.on_activity(self.name, _describe_call(call))
@@ -143,7 +151,10 @@ class Agent:
                 messages.append(tool_message(call.id, output))
 
         messages.append(
-            user_message("You have used all your tool rounds. Give your final answer now, without calling any tools.")
+            user_message(
+                "You have used all your tool rounds. Give your final answer now, "
+                "without calling any tools."
+            )
         )
         return self._chat_round(messages, None, events).content
 
@@ -153,14 +164,19 @@ class Agent:
             available = ", ".join(self._tools_by_name) or "(none)"
             return f"Error: unknown tool '{call.name}'. Available tools: {available}"
         try:
-            arguments: Any = json.loads(call.raw_arguments) if call.raw_arguments.strip() else {}
+            arguments: Any = (
+                json.loads(call.raw_arguments) if call.raw_arguments.strip() else {}
+            )
         except json.JSONDecodeError as exc:
             return f"Error: tool arguments are not valid JSON: {exc}"
         if not isinstance(arguments, dict):
             return "Error: tool arguments must be a JSON object"
         gate = self.tool_gates.get(tool.name, self.permission_gate)
         if not gate.check(tool, arguments):
-            return "Permission denied by the user. Do not retry the same call; ask the user how to proceed instead."
+            return (
+                "Permission denied by the user. Do not retry the same call; "
+                "ask the user how to proceed instead."
+            )
         if self.pre_tool_hook is not None:
             self.pre_tool_hook(tool, arguments)
         try:

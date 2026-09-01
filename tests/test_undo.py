@@ -143,7 +143,11 @@ def test_assistant_undo_direct_tool(tmp_path):
                         id="c1",
                         name="edit_file",
                         raw_arguments=json.dumps(
-                            {"path": str(path), "old_string": "print('hi')", "new_string": "print('hello')"}
+                            {
+                                "path": str(path),
+                                "old_string": "print('hi')",
+                                "new_string": "print('hello')",
+                            }
                         ),
                     )
                 ]
@@ -151,7 +155,9 @@ def test_assistant_undo_direct_tool(tmp_path):
             ChatResult(content="done"),
         ]
     )
-    assistant = Assistant(client=client, tools=[edit_file], permission_gate=AutoApproveGate())
+    assistant = Assistant(
+        client=client, tools=[edit_file], permission_gate=AutoApproveGate()
+    )
     assistant.chat("change the greeting")
     assert "print('hello')" in path.read_text()
     result = assistant.undo()
@@ -165,10 +171,20 @@ def test_assistant_undo_subagent_delegation(tmp_path):
     path.write_text("before")
     client = ScriptedClient(
         [
-            ChatResult(tool_calls=[ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')]),
             ChatResult(
                 tool_calls=[
-                    ToolCall(id="c2", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": "after"}))
+                    ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')
+                ]
+            ),
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c2",
+                        name="write_file",
+                        raw_arguments=json.dumps(
+                            {"path": str(path), "content": "after"}
+                        ),
+                    )
                 ]
             ),
             ChatResult(content="done editing"),
@@ -176,7 +192,9 @@ def test_assistant_undo_subagent_delegation(tmp_path):
         ]
     )
     coder = Agent("coder", tools=[write_file])
-    assistant = Assistant(client=client, agents=[coder], permission_gate=AutoApproveGate())
+    assistant = Assistant(
+        client=client, agents=[coder], permission_gate=AutoApproveGate()
+    )
     assistant.chat("edit it")
     assert path.read_text() == "after"
     result = assistant.undo()
@@ -190,11 +208,19 @@ def test_assistant_undo_all(tmp_path):
     path.write_text("v0")
     edit = lambda content: ChatResult(  # noqa: E731
         tool_calls=[
-            ToolCall(id="c", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": content}))
+            ToolCall(
+                id="c",
+                name="write_file",
+                raw_arguments=json.dumps({"path": str(path), "content": content}),
+            )
         ]
     )
-    client = ScriptedClient([edit("v1"), ChatResult(content="one"), edit("v2"), ChatResult(content="two")])
-    assistant = Assistant(client=client, tools=[write_file], permission_gate=AutoApproveGate())
+    client = ScriptedClient(
+        [edit("v1"), ChatResult(content="one"), edit("v2"), ChatResult(content="two")]
+    )
+    assistant = Assistant(
+        client=client, tools=[write_file], permission_gate=AutoApproveGate()
+    )
     assistant.chat("turn one")
     assistant.chat("turn two")
     result = assistant.undo(2)
@@ -214,14 +240,18 @@ def test_assistant_undo_after_failed_edit(tmp_path):
                     ToolCall(
                         id="c1",
                         name="edit_file",
-                        raw_arguments=json.dumps({"path": str(path), "old_string": "nope", "new_string": "x"}),
+                        raw_arguments=json.dumps(
+                            {"path": str(path), "old_string": "nope", "new_string": "x"}
+                        ),
                     )
                 ]
             ),
             ChatResult(content="could not find it"),
         ]
     )
-    assistant = Assistant(client=client, tools=[edit_file], permission_gate=AutoApproveGate())
+    assistant = Assistant(
+        client=client, tools=[edit_file], permission_gate=AutoApproveGate()
+    )
     assistant.chat("edit it")
     result = assistant.undo()
     assert result.restored == []
@@ -236,12 +266,18 @@ def test_assistant_undo_after_interrupted_turn(tmp_path):
         [
             ChatResult(
                 tool_calls=[
-                    ToolCall(id="c1", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": "v1"}))
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        raw_arguments=json.dumps({"path": str(path), "content": "v1"}),
+                    )
                 ]
             )
         ]
     )
-    assistant = Assistant(client=client, tools=[write_file], permission_gate=AutoApproveGate())
+    assistant = Assistant(
+        client=client, tools=[write_file], permission_gate=AutoApproveGate()
+    )
     try:
         assistant.chat("edit it")
     except IndexError:
@@ -260,13 +296,19 @@ def test_assistant_reset_clears_undo_log(tmp_path):
         [
             ChatResult(
                 tool_calls=[
-                    ToolCall(id="c1", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": "v1"}))
+                    ToolCall(
+                        id="c1",
+                        name="write_file",
+                        raw_arguments=json.dumps({"path": str(path), "content": "v1"}),
+                    )
                 ]
             ),
             ChatResult(content="done"),
         ]
     )
-    assistant = Assistant(client=client, tools=[write_file], permission_gate=AutoApproveGate())
+    assistant = Assistant(
+        client=client, tools=[write_file], permission_gate=AutoApproveGate()
+    )
     assistant.chat("edit it")
     assistant.reset()
     assert assistant.coordinator.history == []

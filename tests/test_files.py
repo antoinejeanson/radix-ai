@@ -35,7 +35,9 @@ def test_read_file_truncation(tmp_path):
 def test_edit_file_replaces_snippet(tmp_path):
     path = tmp_path / "app.py"
     path.write_text("def greet():\n    print('hi')\n")
-    out = edit_file.run(path=str(path), old_string="print('hi')", new_string="print('hello')")
+    out = edit_file.run(
+        path=str(path), old_string="print('hi')", new_string="print('hello')"
+    )
     assert out.startswith(f"Edited {path}.")
     assert "-    print('hi')" in out
     assert "+    print('hello')" in out
@@ -45,7 +47,9 @@ def test_edit_file_replaces_snippet(tmp_path):
 def test_edit_file_multiline(tmp_path):
     path = tmp_path / "app.py"
     path.write_text("a = 1\nb = 2\nc = 3\n")
-    edit_file.run(path=str(path), old_string="a = 1\nb = 2", new_string="a = 10\nb = 20")
+    edit_file.run(
+        path=str(path), old_string="a = 1\nb = 2", new_string="a = 10\nb = 20"
+    )
     assert path.read_text() == "a = 10\nb = 20\nc = 3\n"
 
 

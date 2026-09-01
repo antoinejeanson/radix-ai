@@ -36,7 +36,9 @@ def _type_to_schema(tp: Any) -> dict[str, Any]:
 
 def _is_optional(tp: Any) -> bool:
     origin = typing.get_origin(tp)
-    return origin in (typing.Union, types.UnionType) and type(None) in typing.get_args(tp)
+    return origin in (typing.Union, types.UnionType) and type(None) in typing.get_args(
+        tp
+    )
 
 
 def schema_from_signature(fn: Callable[..., Any]) -> dict[str, Any]:

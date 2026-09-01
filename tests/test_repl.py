@@ -14,7 +14,10 @@ from radix.repl import Repl
 def make_assistant(results, tools=None):
     client = ScriptedClient(results)
     return Assistant(
-        client=client, agents=[Agent("coder")], tools=tools, permission_gate=AutoApproveGate()
+        client=client,
+        agents=[Agent("coder")],
+        tools=tools,
+        permission_gate=AutoApproveGate(),
     )
 
 
@@ -28,7 +31,9 @@ def make_repl():
 def run_repl(assistant, inputs):
     console = Console(file=open("/dev/null", "w"), force_terminal=False)
     repl = Repl(assistant, console=console)
-    repl._session = type("S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))})()
+    repl._session = type(
+        "S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))}
+    )()
     repl.run()
     return repl
 
@@ -37,13 +42,17 @@ def run_repl_captured(assistant, inputs):
     io = StringIO()
     console = Console(file=io, force_terminal=False, width=80)
     repl = Repl(assistant, console=console)
-    repl._session = type("S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))})()
+    repl._session = type(
+        "S", (), {"prompt": staticmethod(lambda *_a, **_k: inputs.pop(0))}
+    )()
     repl.run()
     return repl, io
 
 
 def test_repl_chat_and_commands():
-    assistant = make_assistant([ChatResult(content="answer one"), ChatResult(content="answer two")])
+    assistant = make_assistant(
+        [ChatResult(content="answer one"), ChatResult(content="answer two")]
+    )
     run_repl(assistant, ["/help", "first", "/undo all", "second", "/exit"])
     assert len(assistant.coordinator.history) == 2
     assert assistant.coordinator.history[0]["content"] == "second"
@@ -59,7 +68,9 @@ def test_repl_undo_restores_files_and_rewinds(tmp_path):
                     ToolCall(
                         id="c1",
                         name="write_file",
-                        raw_arguments=json.dumps({"path": str(path), "content": "after"}),
+                        raw_arguments=json.dumps(
+                            {"path": str(path), "content": "after"}
+                        ),
                     )
                 ]
             ),
@@ -98,7 +109,11 @@ def test_repl_undo_all_reverts_everything(tmp_path):
     path.write_text("v0")
     edit = lambda content: ChatResult(  # noqa: E731
         tool_calls=[
-            ToolCall(id="c", name="write_file", raw_arguments=json.dumps({"path": str(path), "content": content}))
+            ToolCall(
+                id="c",
+                name="write_file",
+                raw_arguments=json.dumps({"path": str(path), "content": content}),
+            )
         ]
     )
     assistant = make_assistant(
@@ -148,7 +163,12 @@ def test_repl_subagent_panel_shows_total_time_and_reported_tokens():
     repl._run_start["coder"] = time.monotonic() - 5.0
     ev.on_start("coder")
     ev.on_delta("coder", "result")
-    ev.on_stop("coder", 0.1, True, Usage(prompt_tokens=40, completion_tokens=10, total_tokens=50))
+    ev.on_stop(
+        "coder",
+        0.1,
+        True,
+        Usage(prompt_tokens=40, completion_tokens=10, total_tokens=50),
+    )
     out = io.getvalue()
     assert "5.0s" in out
     assert "· 50 tok" in out
@@ -232,7 +252,9 @@ def test_repl_max_output_lines_configurable():
     io = StringIO()
     console = Console(file=io, force_terminal=False, width=80)
     repl = Repl(assistant, console=console, max_output_lines=2)
-    repl.events.on_tool_output("coder", "read_file", "\n".join(f"line {i}" for i in range(10)))
+    repl.events.on_tool_output(
+        "coder", "read_file", "\n".join(f"line {i}" for i in range(10))
+    )
     out = io.getvalue()
     assert "line 0" in out
     assert "line 1" in out
@@ -243,7 +265,9 @@ def test_repl_max_output_lines_configurable():
 def test_repl_renders_edit_error_as_plain_output():
     repl, io = make_repl()
     ev = repl.events
-    ev.on_tool_output("coder", "edit_file", "Error: old_string not found in /tmp/app.py.")
+    ev.on_tool_output(
+        "coder", "edit_file", "Error: old_string not found in /tmp/app.py."
+    )
     out = io.getvalue()
     assert "old_string not found" in out
 
