@@ -59,8 +59,15 @@ class Repl:
     token use.
     """
 
-    def __init__(self, assistant: Assistant, *, console: Console | None = None) -> None:
+    def __init__(
+        self,
+        assistant: Assistant,
+        *,
+        max_output_lines: int = MAX_OUTPUT_LINES,
+        console: Console | None = None,
+    ) -> None:
         self.assistant = assistant
+        self.max_output_lines = max_output_lines
         self.console = console or Console()
         self._session: PromptSession[str] = PromptSession(history=InMemoryHistory())
         self._live: Live | None = None
@@ -177,8 +184,8 @@ class Repl:
         if tool_name.startswith("ask_"):
             return
         lines = output.splitlines()
-        capped = "\n".join(lines[:MAX_OUTPUT_LINES])
-        if len(lines) > MAX_OUTPUT_LINES:
+        capped = "\n".join(lines[: self.max_output_lines])
+        if len(lines) > self.max_output_lines:
             capped += "\n[dim]... [output truncated][/dim]"
         if tool_name == "edit_file" and not output.startswith("Error"):
             self.console.print(_diff_text(capped))

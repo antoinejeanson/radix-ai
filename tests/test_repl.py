@@ -227,6 +227,19 @@ def test_repl_renders_plain_tool_output_capped():
     assert "[output truncated]" in out
 
 
+def test_repl_max_output_lines_configurable():
+    assistant = make_assistant([])
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console, max_output_lines=2)
+    repl.events.on_tool_output("coder", "read_file", "\n".join(f"line {i}" for i in range(10)))
+    out = io.getvalue()
+    assert "line 0" in out
+    assert "line 1" in out
+    assert "line 2" not in out
+    assert "[output truncated]" in out
+
+
 def test_repl_renders_edit_error_as_plain_output():
     repl, io = make_repl()
     ev = repl.events

@@ -59,3 +59,27 @@ def test_prepare_keeps_everything_when_body_too_small_to_compact():
     cm, _ = make_manager([], budget=10)
     messages = [system_message("s"), user_message("u")]
     assert cm.prepare(messages) == messages
+
+
+def test_custom_summary_prompt_and_transcript_limit():
+    client = ScriptedClient([ChatResult(content="S")])
+    cm = ContextManager(
+        client,
+        max_context_tokens=150,
+        reserve_output_tokens=0,
+        keep_recent=2,
+        summary_prompt="my custom prompt",
+        transcript_char_limit=10,
+    )
+    out = cm.prepare(build_messages())
+    call = client.complete_calls[0]["messages"]
+    assert call[0] == {"role": "system", "content": "my custom prompt"}
+    assert len(call[1]["content"]) <= 10
+    assert out[1]["content"] == "[Summary of the earlier conversation]\nS"
+
+
+def test_custom_fallback_summary():
+    cm, _ = make_manager([], budget=150)
+    cm.fallback_summary = "custom fallback"
+    out = cm.prepare(build_messages())
+    assert "custom fallback" in out[1]["content"]

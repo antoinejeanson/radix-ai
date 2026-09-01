@@ -23,7 +23,8 @@ if TYPE_CHECKING:
     from .client import Client
     from .context import ContextManager
 
-MAX_TOOL_OUTPUT_CHARS = 16000
+DEFAULT_MAX_TOOL_OUTPUT_CHARS = 16000
+DEFAULT_MAX_TOOL_ROUNDS = 8
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -58,7 +59,8 @@ class Agent:
         client: Client | None = None,
         context: ContextManager | None = None,
         permission_gate: PermissionGate | None = None,
-        max_tool_rounds: int = 8,
+        max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+        max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         stateful: bool = False,
         pre_tool_hook: Callable[[Tool, dict[str, Any]], None] | None = None,
     ) -> None:
@@ -70,6 +72,7 @@ class Agent:
         self.context = context
         self.permission_gate = permission_gate or CliPermissionGate()
         self.max_tool_rounds = max_tool_rounds
+        self.max_tool_output_chars = max_tool_output_chars
         self.stateful = stateful
         self.pre_tool_hook = pre_tool_hook
         self.history: list[Message] = []
@@ -161,4 +164,4 @@ class Agent:
             return f"Error: invalid arguments for tool '{call.name}': {exc}"
         except Exception as exc:
             return f"Error while running tool '{call.name}': {exc}"
-        return _truncate(output, MAX_TOOL_OUTPUT_CHARS)
+        return _truncate(output, self.max_tool_output_chars)

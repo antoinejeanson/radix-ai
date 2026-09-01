@@ -242,6 +242,16 @@ sets the budget; when a conversation outgrows it, older messages are
 summarized by the model into a single compact message (and dropped if even
 that fails). The system prompt and the most recent messages always survive.
 
+Every limit is a plain constructor kwarg with a sensible default. On
+`Assistant`: `max_context_tokens`, `reserve_output_tokens`, `keep_recent`,
+`summary_prompt`, `fallback_summary`, `transcript_char_limit`, and
+`max_tool_rounds` / `max_tool_output_chars` for the coordinator. On `Agent`,
+for a specific sub-agent: `max_tool_rounds`, `max_tool_output_chars`. On
+`Repl`, for the terminal: `max_output_lines`. The defaults
+(`DEFAULT_MAX_TOOL_OUTPUT_CHARS`, `SUMMARY_PROMPT`, `TRANSCRIPT_CHAR_LIMIT`,
+`MAX_OUTPUT_LINES`, ...) are exported from `radix` if you want to tune
+relative to them.
+
 ---
 
 ## Example assistants

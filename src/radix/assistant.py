@@ -2,9 +2,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from .agent import Agent
+from .agent import DEFAULT_MAX_TOOL_OUTPUT_CHARS, DEFAULT_MAX_TOOL_ROUNDS, Agent
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
-from .context import ContextManager
+from .context import (
+    DEFAULT_KEEP_RECENT,
+    DEFAULT_MAX_CONTEXT_TOKENS,
+    DEFAULT_RESERVE_OUTPUT_TOKENS,
+    FALLBACK_SUMMARY,
+    SUMMARY_PROMPT,
+    TRANSCRIPT_CHAR_LIMIT,
+    ContextManager,
+)
 from .coordinator import Coordinator
 from .events import Events
 from .permissions import CliPermissionGate, PermissionGate
@@ -34,8 +42,14 @@ class Assistant:
         agents: list[Agent] | None = None,
         tools: list[Tool] | None = None,
         system_prompt: str | None = None,
-        max_context_tokens: int = 8192,
-        reserve_output_tokens: int = 2048,
+        max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+        reserve_output_tokens: int = DEFAULT_RESERVE_OUTPUT_TOKENS,
+        keep_recent: int = DEFAULT_KEEP_RECENT,
+        summary_prompt: str = SUMMARY_PROMPT,
+        fallback_summary: str = FALLBACK_SUMMARY,
+        transcript_char_limit: int = TRANSCRIPT_CHAR_LIMIT,
+        max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
+        max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         permission_gate: PermissionGate | None = None,
         client: Client | None = None,
     ) -> None:
@@ -46,6 +60,10 @@ class Assistant:
             self.client,
             max_context_tokens=max_context_tokens,
             reserve_output_tokens=reserve_output_tokens,
+            keep_recent=keep_recent,
+            summary_prompt=summary_prompt,
+            fallback_summary=fallback_summary,
+            transcript_char_limit=transcript_char_limit,
         )
         agents = list(agents or [])
         for agent in agents:
@@ -57,6 +75,8 @@ class Assistant:
             client=self.client,
             context=self.context,
             permission_gate=self.permission_gate,
+            max_tool_rounds=max_tool_rounds,
+            max_tool_output_chars=max_tool_output_chars,
         )
         self.coordinator.pre_tool_hook = self._snapshot_tool_call
 

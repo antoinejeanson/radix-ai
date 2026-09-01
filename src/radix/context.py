@@ -14,6 +14,9 @@ SUMMARY_PROMPT = (
 )
 FALLBACK_SUMMARY = "(earlier messages were dropped to fit the context window)"
 TRANSCRIPT_CHAR_LIMIT = 12000
+DEFAULT_MAX_CONTEXT_TOKENS = 8192
+DEFAULT_RESERVE_OUTPUT_TOKENS = 2048
+DEFAULT_KEEP_RECENT = 4
 
 
 def estimate_tokens(text: str) -> int:
@@ -33,14 +36,20 @@ class ContextManager:
         self,
         client: Client,
         *,
-        max_context_tokens: int = 8192,
-        reserve_output_tokens: int = 2048,
-        keep_recent: int = 4,
+        max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
+        reserve_output_tokens: int = DEFAULT_RESERVE_OUTPUT_TOKENS,
+        keep_recent: int = DEFAULT_KEEP_RECENT,
+        summary_prompt: str = SUMMARY_PROMPT,
+        fallback_summary: str = FALLBACK_SUMMARY,
+        transcript_char_limit: int = TRANSCRIPT_CHAR_LIMIT,
         token_estimator: Callable[[str], int] | None = None,
     ) -> None:
         self.client = client
         self.budget = max_context_tokens - reserve_output_tokens
         self.keep_recent = keep_recent
+        self.summary_prompt = summary_prompt
+        self.fallback_summary = fallback_summary
+        self.transcript_char_limit = transcript_char_limit
         self._estimate = token_estimator or estimate_tokens
 
     def message_tokens(self, messages: list[Message]) -> int:
@@ -88,15 +97,15 @@ class ContextManager:
             if isinstance(content, str) and content.strip():
                 lines.append(f"{message.get('role')}: {content}")
         if not lines:
-            return FALLBACK_SUMMARY
-        transcript = "\n".join(lines)[:TRANSCRIPT_CHAR_LIMIT]
+            return self.fallback_summary
+        transcript = "\n".join(lines)[: self.transcript_char_limit]
         try:
             result = self.client.complete(
                 [
-                    {"role": "system", "content": SUMMARY_PROMPT},
+                    {"role": "system", "content": self.summary_prompt},
                     {"role": "user", "content": transcript},
                 ]
             )
-            return result.content.strip() or FALLBACK_SUMMARY
+            return result.content.strip() or self.fallback_summary
         except Exception:
-            return FALLBACK_SUMMARY
+            return self.fallback_summary

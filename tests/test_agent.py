@@ -17,6 +17,12 @@ def shell(command: str) -> str:
     return f"ran: {command}"
 
 
+@tool
+def verbose() -> str:
+    """Return a long string."""
+    return "x" * 50
+
+
 def make_agent(results, tools=None, **kwargs):
     client = ScriptedClient(results)
     agent = Agent("tester", system_prompt="be brief", tools=tools or [add], client=client, **kwargs)
@@ -146,6 +152,22 @@ def test_max_tool_rounds_forces_final_answer():
     last = client.stream_calls[-1]
     assert last["tools"] is None
     assert "final answer" in last["messages"][-1]["content"]
+
+
+def test_max_tool_output_chars_truncates_tool_output():
+    agent, client = make_agent(
+        [
+            ChatResult(tool_calls=[ToolCall(id="c1", name="verbose", raw_arguments="{}")]),
+            ChatResult(content="done"),
+        ],
+        tools=[verbose],
+        max_tool_output_chars=10,
+    )
+    assert agent.run("go") == "done"
+    output = client.stream_calls[1]["messages"][3]["content"]
+    assert output.startswith("x" * 10)
+    assert len(output) < 50
+    assert "[output truncated]" in output
 
 
 def test_run_without_client_raises():
