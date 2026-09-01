@@ -262,6 +262,12 @@ client = Client(model="radix", base_url="http://localhost:8080/v1")
 # SAFE verdicts auto-approve, DANGEROUS (or a failed check) denies: no prompts.
 assistant = Assistant(client=client, permission_gate=LlmAutoSafetyGate(client))
 
+# Same, but a DANGEROUS verdict asks "Run anyway? [y/N]" before denying:
+# the model flags, the human stays in charge.
+assistant = Assistant(
+    client=client, permission_gate=LlmAutoSafetyGate(client, confirm_unsafe=True)
+)
+
 # Shows the model's verdict, then the user gets the usual [y/N] prompt.
 assistant = Assistant(client=client, permission_gate=LlmAdvisoryGate(client))
 ```

@@ -42,6 +42,48 @@ def test_auto_gate_denies_dangerous_call():
     assert any("DANGEROUS" in line for line in lines)
 
 
+def test_auto_gate_never_prompts_by_default():
+    def explode(prompt: str) -> str:
+        raise AssertionError("should not prompt without confirm_unsafe")
+
+    gate, _, _ = gate_for(LlmAutoSafetyGate, "DANGEROUS\nwipes disk", input_fn=explode)
+    assert gate.check(shell, {"command": "rm -rf /"}) is False
+
+
+def test_auto_gate_confirm_unsafe_approves_on_yes():
+    gate, _, _ = gate_for(LlmAutoSafetyGate, "DANGEROUS\nwipes the disk", confirm_unsafe=True, input_fn=lambda p: "y")
+    assert gate.check(shell, {"command": "rm -rf /"}) is True
+
+
+def test_auto_gate_confirm_unsafe_denies_on_no():
+    gate, _, _ = gate_for(LlmAutoSafetyGate, "DANGEROUS\nwipes the disk", confirm_unsafe=True, input_fn=lambda p: "n")
+    assert gate.check(shell, {"command": "rm -rf /"}) is False
+
+
+def test_auto_gate_confirm_unsafe_skips_prompt_when_safe():
+    def explode(prompt: str) -> str:
+        raise AssertionError("safe verdicts never prompt")
+
+    gate, _, _ = gate_for(LlmAutoSafetyGate, "SAFE\nread-only listing", confirm_unsafe=True, input_fn=explode)
+    assert gate.check(shell, {"command": "ls"}) is True
+
+
+def test_auto_gate_confirm_unsafe_asks_on_failed_check():
+    class ExplodingClient:
+        def complete(self, messages, tools=None):
+            raise RuntimeError("connection refused")
+
+    prompts: list[str] = []
+    gate = LlmAutoSafetyGate(
+        ExplodingClient(),
+        confirm_unsafe=True,
+        input_fn=lambda p: prompts.append(p) or "y",
+        printer=lambda s: None,
+    )
+    assert gate.check(shell, {"command": "ls"}) is True
+    assert any("Run anyway" in p for p in prompts)
+
+
 def test_auto_gate_denies_when_check_fails():
     class ExplodingClient:
         def complete(self, messages, tools=None):

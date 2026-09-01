@@ -72,8 +72,10 @@ def _print_verdict(printer: Callable[[str], None], verdict: SafetyVerdict) -> No
 class LlmAutoSafetyGate:
     """LLM-judged gate: auto-approves safe calls, denies dangerous ones.
 
-    No user prompt: the model's verdict is the decision. Fails closed —
-    a failed or unparseable check is denied, never auto-approved.
+    No user prompt by default: the model's verdict is the decision. Fails
+    closed — a failed or unparseable check is denied, never auto-approved.
+    With `confirm_unsafe=True`, a non-safe verdict (including a failed
+    check) instead asks the user for a final [y/N] before denying.
     """
 
     def __init__(
@@ -81,15 +83,24 @@ class LlmAutoSafetyGate:
         client: Client,
         *,
         checker: LlmSafetyChecker | None = None,
+        confirm_unsafe: bool = False,
+        input_fn: Callable[[str], str] = input,
         printer: Callable[[str], None] = print,
     ) -> None:
         self._checker = checker or LlmSafetyChecker(client)
+        self._confirm_unsafe = confirm_unsafe
+        self._input = input_fn
         self._print = printer
 
     def check(self, tool: Tool, arguments: dict[str, Any]) -> bool:
         verdict = self._checker.check(tool, arguments)
         _print_verdict(self._print, verdict)
-        return verdict.safe
+        if verdict.safe:
+            return True
+        if not self._confirm_unsafe:
+            return False
+        answer = self._input("The model flagged this call. Run anyway? [y/N] ")
+        return answer.strip().lower() in ("y", "yes")
 
 
 class LlmAdvisoryGate:
