@@ -9,7 +9,9 @@ from ..tool import tool
 
 
 @tool
-def ask_question(question: str, choices: list[str], input_fn: Callable[[str], str] | None = None) -> str:
+def ask_question(
+    question: str, choices: list[str], input_fn: Callable[[str], str] | None = None
+) -> str:
     """Ask the user a question with selectable choices.
 
     Displays the question and a numbered list of choices. The user may

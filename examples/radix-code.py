@@ -10,7 +10,7 @@ Then run this file:
 """
 
 from radix import Assistant, AutoApproveGate, Client, LlmAutoSafetyGate
-from radix.builtin import edit_file, read_file, run_shell, write_file, ask_question
+from radix.builtin import ask_question, edit_file, read_file, run_shell, write_file
 
 client = Client(model="radix", base_url="http://localhost:8080/v1")
 
