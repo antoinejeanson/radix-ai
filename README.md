@@ -54,7 +54,7 @@ Deep roots, small footprint. Just like the models we love.
 - **Delegation without dogma** — Radix supports delegating to specialized sub-agents to keep the main context clean, but never enforces it. A one-agent assistant with no tools is a perfectly good Radix assistant.
 - **Minimalist CLI REPL** — no web UI, no daemon, no dashboard. A prompt, a model, and you.
 - **Sane, secure defaults** — every tool call goes through a permission gate, and the default gate asks for explicit approval on every call. Trusted setups opt out with `AutoApproveGate`.
-- **llama.cpp first** — defaults point at `http://localhost:8080/v1`. Anything with an OpenAI-compatible API works too (vLLM, Ollama, ...).
+- **llama.cpp first** — defaults point at `http://localhost:8080/v1`. Anything with an OpenAI-compatible API works too (vLLM, Ollama, OpenRouter, ...).
 - **Made for small models** — designed for locally hosted LLMs (< 35B params, < 32k context) and their precious token budgets. Also perfectly happy with bigger models.
 
 ## What a Radix assistant looks like at work
@@ -328,10 +328,21 @@ relative to them.
 
 Radix ships example assistants you can run as-is or steal parts from:
 
-- **`examples/assistant.py`** — a general-purpose demo with all the built-in
-  tools: a `coder` (read, edit, write, shell) and a `researcher` (web). It
-  exists mostly to exercise every feature... which is why it's about to grow
-  up: it will become **`radix-code`**, an assistant specialized for coding.
+- **`examples/assistant.py`** — the smallest useful assistant: the
+  coordinator with all the built-in tools and the default permission gate
+  (every call prompts). The right file to copy when you start your own.
+- **`examples/radix-code.py`** — an agentic coding assistant. It trades the
+  small-context defaults for a 16k context, a system prompt built around
+  inspect-edit-verify, more tool rounds per turn, and a coordinator that
+  keeps its session state. It also shows the permission-gate combo in
+  practice: file tools never prompt, while the LLM safety gate reviews
+  every shell command and asks you before dangerous ones run.
+- **`examples/sub-agents.py`** — delegation in practice: a `coder` and a
+  `researcher` sub-agent. Each delegated task runs in a fresh, isolated
+  context and only the final answer reaches the coordinator.
+- **`examples/openrouter.py`** — the same assistant pointed at OpenRouter's
+  hosted API (`https://openrouter.ai/api/v1`) instead of a local server,
+  with the model id and API key read from the environment.
 
 More ready-made assistants are on the way. And if you build one you like,
 that's the intended happy ending — an assistant is just a Python file.
