@@ -53,7 +53,7 @@ Deep roots, small footprint. Just like the models we love.
 - **Your workflow, your agents** — compose specialized agents and tools around how *you* work, then hand the result to anyone: it's one `uv run` away.
 - **Delegation without dogma** — Radix supports delegating to specialized sub-agents to keep the main context clean, but never enforces it. A one-agent assistant with no tools is a perfectly good Radix assistant.
 - **Minimalist CLI REPL** — no web UI, no daemon, no dashboard. A prompt, a model, and you.
-- **Sane, secure defaults** — terminal and Internet tools ask for explicit permission on every call. Reading and editing files doesn't.
+- **Sane, secure defaults** — every tool call goes through a permission gate, and the default gate asks for explicit approval on every call. Trusted setups opt out with `AutoApproveGate`.
 - **llama.cpp first** — defaults point at `http://localhost:8080/v1`. Anything with an OpenAI-compatible API works too (vLLM, Ollama, ...).
 - **Made for small models** — designed for locally hosted LLMs (< 35B params, < 32k context) and their precious token budgets. Also perfectly happy with bigger models.
 
@@ -160,14 +160,14 @@ def word_count(path: str) -> str:
 ```
 
 Tools can go on the coordinator (`Assistant(tools=[...])`) or on any
-sub-agent. Mark anything dangerous with `ask_permission=True` — the user approves
-every single call, with the arguments shown:
+sub-agent. Every tool call goes through the assistant's permission gate; the
+gate sees the tool and its arguments and decides, showing the user the
+arguments and asking for approval when the policy says so:
 
 ```python
-@tool(ask_permission=True)
-def deploy(target: str) -> str:
-    """Deploy the app to the given target."""
-    ...
+from radix import AutoApproveGate, Assistant
+
+assistant = Assistant(permission_gate=AutoApproveGate())  # trusted: never prompt
 ```
 
 ### Sub-agents and delegation (optional)
@@ -198,13 +198,17 @@ one agent with a few tools, and that's exactly what Radix supports too.
 
 ### Built-in tools
 
-| Tool        | ask_permission | What it does                                                        |
-| ----------- | --------- | ------------------------------------------------------------------- |
-| `read_file` | no        | Read a text file (UTF-8, truncated to keep context small).          |
-| `edit_file` | no        | Replace one exact, unique snippet — returns a unified diff.         |
-| `write_file`| no        | Create or overwrite a file, creating parent directories as needed.  |
-| `run_shell` | **yes**   | Run a shell command (120s timeout, output truncated).               |
-| `fetch_url` | **yes**   | Fetch a web page.                                                   |
+| Tool        | What it does                                                          |
+| ----------- | --------------------------------------------------------------------- |
+| `read_file` | Read a text file (UTF-8, truncated to keep context small).            |
+| `edit_file` | Replace one exact, unique snippet — returns a unified diff.           |
+| `write_file`| Create or overwrite a file, creating parent directories as needed.    |
+| `run_shell` | Run a shell command (120s timeout, output truncated).                 |
+| `fetch_url` | Fetch a web page.                                                     |
+
+Whether any of these prompt for approval is the permission gate's decision,
+not the tool's: with the default gate every call asks; with `AutoApproveGate`
+nothing does; with `tool_gates` you pick per tool.
 
 `edit_file` is deliberately fussy for small models: it refuses to edit when
 `old_string` matches zero or multiple places, so a confused model can't
@@ -219,7 +223,7 @@ tools are not tracked.
 
 ### Permissions
 
-The default `CliPermissionGate` prompts on every call that requires permission. Gates are a
+The default `CliPermissionGate` prompts on every tool call. Gates are a
 one-method protocol, so policies are just Python:
 
 ```python
@@ -234,6 +238,64 @@ assistant = Assistant(agents=[...], permission_gate=OnlyLocalhostGate())
 
 Per-tool allowlists, command prefixes, working-directory jails — the gate sees
 the tool and its parsed arguments, so the sky's the limit.
+
+There is no per-tool "ask me" flag: `AutoApproveGate` is the documented opt-out
+for fully trusted setups, and `tool_gates` (below) re-introduces prompting for
+just the tools you care about:
+
+```python
+assistant = Assistant(
+    permission_gate=AutoApproveGate(),          # trust everything by default
+    tool_gates={"run_shell": CliPermissionGate()},  # ...but always ask for shell
+)
+```
+
+#### LLM safety gates
+
+Two ready-made gates ask the model whether a permission-gated call is safe
+before anything happens. Both take the assistant's `Client` and work with any
+tool, not just `run_shell`:
+
+```python
+client = Client(model="radix", base_url="http://localhost:8080/v1")
+
+# SAFE verdicts auto-approve, DANGEROUS (or a failed check) denies: no prompts.
+assistant = Assistant(client=client, permission_gate=LlmAutoSafetyGate(client))
+
+# Shows the model's verdict, then the user gets the usual [y/N] prompt.
+assistant = Assistant(client=client, permission_gate=LlmAdvisoryGate(client))
+```
+
+Both fail closed: a network error or an unparseable answer never auto-approves
+— the auto gate denies, the advisory gate falls back to the user prompt.
+
+#### Per-tool gates
+
+A single gate applies to every tool, but you can hand specific tools their own
+gate with `tool_gates` — useful when one tool deserves a harder or softer
+policy than the rest. A per-tool gate **replaces** the global one for that
+tool; everything else keeps the `permission_gate`:
+
+```python
+assistant = Assistant(
+    client=client,
+    tools=[run_shell, fetch_url],
+    permission_gate=CliPermissionGate(),          # default for everything else
+    tool_gates={
+        "run_shell": LlmAutoSafetyGate(client),   # `ls` runs, `rm -rf /` auto-denied
+        "fetch_url": LlmAdvisoryGate(client),     # LLM advises, you decide
+    },
+)
+```
+
+The map applies to sub-agents too, and names are checked against the tools
+that actually exist — a typo like `"run_shll"` raises a `ValueError` instead
+of silently bypassing the gate. `ask_<name>` delegation tools are valid
+targets.
+
+An `Agent` always overrides the assistant's gates with its own when you pass
+`permission_gate=` or `tool_gates=` explicitly to the agent; otherwise the
+assistant's gates are inherited.
 
 ### Context management
 
@@ -280,6 +342,7 @@ radix/
 ├── events.py       # The observer hooks the REPL renders
 ├── repl.py         # The CLI: spinners, diffs, panels, tokens
 ├── permissions.py  # Permission gates
+├── safety.py       # LLM safety checker used by the LLM permission gates
 ├── tool.py         # @tool decorator + schema generation
 ├── messages.py     # Message & result types
 ├── undo.py         # Per-turn file snapshots for /undo

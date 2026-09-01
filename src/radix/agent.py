@@ -59,6 +59,7 @@ class Agent:
         client: Client | None = None,
         context: ContextManager | None = None,
         permission_gate: PermissionGate | None = None,
+        tool_gates: dict[str, PermissionGate] | None = None,
         max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
         max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         stateful: bool = False,
@@ -71,6 +72,9 @@ class Agent:
         self.client = client
         self.context = context
         self.permission_gate = permission_gate or CliPermissionGate()
+        self.tool_gates = tool_gates or {}
+        self._permission_gate_explicit = permission_gate is not None
+        self._tool_gates_explicit = tool_gates is not None
         self.max_tool_rounds = max_tool_rounds
         self.max_tool_output_chars = max_tool_output_chars
         self.stateful = stateful
@@ -154,7 +158,8 @@ class Agent:
             return f"Error: tool arguments are not valid JSON: {exc}"
         if not isinstance(arguments, dict):
             return "Error: tool arguments must be a JSON object"
-        if not self.permission_gate.check(tool, arguments):
+        gate = self.tool_gates.get(tool.name, self.permission_gate)
+        if not gate.check(tool, arguments):
             return "Permission denied by the user. Do not retry the same call; ask the user how to proceed instead."
         if self.pre_tool_hook is not None:
             self.pre_tool_hook(tool, arguments)

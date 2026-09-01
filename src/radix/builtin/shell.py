@@ -8,7 +8,7 @@ MAX_OUTPUT_CHARS = 16000
 TIMEOUT_SECONDS = 120
 
 
-@tool(ask_permission=True)
+@tool
 def run_shell(command: str) -> str:
     """Run a shell command on the user's machine and return its output."""
     try:

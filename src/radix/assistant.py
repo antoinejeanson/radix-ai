@@ -51,10 +51,12 @@ class Assistant:
         max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
         max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         permission_gate: PermissionGate | None = None,
+        tool_gates: dict[str, PermissionGate] | None = None,
         client: Client | None = None,
     ) -> None:
         self.client = client or Client(model=model, base_url=base_url, api_key=api_key)
         self.permission_gate = permission_gate or CliPermissionGate()
+        self.tool_gates = tool_gates or {}
         self.undo_log = UndoLog()
         self.context = ContextManager(
             self.client,
@@ -75,9 +77,11 @@ class Assistant:
             client=self.client,
             context=self.context,
             permission_gate=self.permission_gate,
+            tool_gates=self.tool_gates,
             max_tool_rounds=max_tool_rounds,
             max_tool_output_chars=max_tool_output_chars,
         )
+        self._validate_tool_gates()
         self.coordinator.pre_tool_hook = self._snapshot_tool_call
 
     def _bind(self, agent: Agent) -> None:
@@ -85,8 +89,22 @@ class Assistant:
             agent.client = self.client
         if agent.context is None:
             agent.context = self.context
-        agent.permission_gate = self.permission_gate
+        if not agent._permission_gate_explicit:
+            agent.permission_gate = self.permission_gate
+        if not agent._tool_gates_explicit:
+            agent.tool_gates = self.tool_gates
         agent.pre_tool_hook = self._snapshot_tool_call
+
+    def _validate_tool_gates(self) -> None:
+        known = {t.name for t in self.coordinator.tools}
+        for agent in self.coordinator.agents:
+            known |= {t.name for t in agent.tools}
+        unknown = sorted(set(self.tool_gates) - known)
+        if unknown:
+            raise ValueError(
+                "tool_gates reference unknown tool(s): " + ", ".join(unknown) + ". "
+                "Known tools: " + ", ".join(sorted(known)) + "."
+            )
 
     def _snapshot_tool_call(self, tool: Tool, arguments: dict[str, Any]) -> None:
         if tool.name in self._SNAPSHOT_TOOLS and "path" in arguments:
