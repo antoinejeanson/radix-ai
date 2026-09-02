@@ -43,7 +43,12 @@ def test_assistant_chat_end_to_end():
         client=client, agents=[coder], permission_gate=AutoApproveGate()
     )
     assert assistant.chat("hello") == "hi from coordinator"
-    assert assistant.coordinator.history[1]["content"] == "hi from coordinator"
+    roles = [m["role"] for m in assistant.coordinator.history]
+    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert assistant.coordinator.history[0]["content"] == "hello"
+    tool_call = assistant.coordinator.history[1]["tool_calls"][0]
+    assert tool_call["function"]["name"] == "ask_coder"
+    assert assistant.coordinator.history[-1]["content"] == "hi from coordinator"
     assistant.reset()
     assert assistant.coordinator.history == []
 

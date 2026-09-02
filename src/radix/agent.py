@@ -151,8 +151,9 @@ class Agent:
     def run(self, task: str, *, events: Events | None = None) -> str:
         """Run one task and return the final answer.
 
-        The task is sent as a user message. With `stateful=True`, the task
-        and the answer are appended to `history` for the next run.
+        The task is sent as a user message. With `stateful=True`, the
+        working transcript (the task, every tool call and result, and the
+        final answer) is persisted as the agent's memory for the next run.
 
         Args:
             task: The instruction to execute, as plain text.
@@ -179,14 +180,37 @@ class Agent:
 
         self._events = events
         try:
-            answer = self._loop(working, events)
+            answer, prepared = self._loop(working, events)
         finally:
             self._events = None
 
         if self.stateful:
-            self.history.append(user_message(task))
-            self.history.append(assistant_message(answer))
+            self._remember(prepared, answer)
         return answer
+
+    def _remember(self, prepared: list[Message], answer: str) -> None:
+        """Persist the working transcript as the stateful agent's memory.
+
+        Stores the last prepared (compacted) working list — which includes
+        the user task, every assistant tool-call message, its tool results
+        (and delegation results), and the final answer — so the next run
+        can quote prior tool work. The leading system prompt is dropped
+        (it is re-added at send time), and the final assistant answer is
+        appended when it is not already the last message (i.e. the final
+        round produced a plain answer with no tool call).
+
+        Args:
+            prepared: The last message list the model saw, system prompt
+                first (if any).
+            answer: The agent's final answer.
+        """
+        has_system = bool(prepared) and prepared[0].get("role") == "system"
+        memory = prepared[1:] if has_system else list(prepared)
+        if not memory or memory[-1].get("role") != "assistant":
+            memory.append(assistant_message(answer))
+        elif memory[-1].get("content") != answer:
+            memory[-1] = assistant_message(answer)
+        self.history = memory
 
     def _chat_round(
         self,
@@ -221,7 +245,9 @@ class Agent:
             )
         return result
 
-    def _loop(self, messages: list[Message], events: Events | None) -> str:
+    def _loop(
+        self, messages: list[Message], events: Events | None
+    ) -> tuple[str, list[Message]]:
         """Drive the tool-call loop until the model answers without tools.
 
         Compacts via `context` before every round and executes each tool
@@ -234,20 +260,26 @@ class Agent:
             events: Observer callbacks for live progress.
 
         Returns:
-            The agent's final answer.
+            A tuple of the agent's final answer and the last prepared
+            (possibly compacted) message list the model saw, which is the
+            basis for the stateful agent's persisted memory.
         """
         tool_schemas = [t.schema() for t in self.tools] or None
+        last_prepared = messages
         for _ in range(self.max_tool_rounds):
             prepared = self.context.prepare(messages) if self.context else messages
+            last_prepared = prepared
             result = self._chat_round(prepared, tool_schemas, events)
             if not result.tool_calls:
-                return result.content
+                return result.content, last_prepared
             messages.append(
                 assistant_tool_call_message(result.content, result.tool_calls)
             )
             for call in result.tool_calls:
                 if events and events.on_activity:
-                    events.on_activity(self.name, _describe_call(call))
+                    events.on_activity(
+                        self.name, _describe_call(call), call.raw_arguments
+                    )
                 output = self._execute(call)
                 if events and events.on_tool_output:
                     events.on_tool_output(self.name, call.name, output)
@@ -259,7 +291,8 @@ class Agent:
                 "without calling any tools."
             )
         )
-        return self._chat_round(messages, None, events).content
+        final = self._chat_round(messages, None, events)
+        return final.content, last_prepared
 
     def _execute(self, call: ToolCall) -> str:
         """Run one tool call, guarding permission and errors.

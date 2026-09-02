@@ -6,6 +6,7 @@ from .agent import DEFAULT_MAX_TOOL_ROUNDS, Agent
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
 from .context import (
     DEFAULT_KEEP_RECENT,
+    DEFAULT_KEEP_RECENT_TURNS,
     DEFAULT_MAX_CONTEXT_TOKENS,
     DEFAULT_RESERVE_OUTPUT_TOKENS,
     FALLBACK_SUMMARY,
@@ -46,6 +47,7 @@ class Assistant:
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         reserve_output_tokens: int = DEFAULT_RESERVE_OUTPUT_TOKENS,
         keep_recent: int = DEFAULT_KEEP_RECENT,
+        keep_recent_turns: int = DEFAULT_KEEP_RECENT_TURNS,
         summary_prompt: str = SUMMARY_PROMPT,
         fallback_summary: str = FALLBACK_SUMMARY,
         max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
@@ -78,6 +80,10 @@ class Assistant:
                 max_context_tokens - reserve_output_tokens.
             keep_recent: Number of most recent messages kept verbatim when
                 the conversation is compacted.
+            keep_recent_turns: Number of most recent complete turns kept
+                verbatim when compacted (a turn runs from a user message
+                through the following assistant message, including any tool
+                calls and results).
             summary_prompt: System prompt used when summarizing the old
                 conversation during compaction.
             fallback_summary: Summary message used when summarization fails
@@ -104,6 +110,7 @@ class Assistant:
             max_context_tokens=max_context_tokens,
             reserve_output_tokens=reserve_output_tokens,
             keep_recent=keep_recent,
+            keep_recent_turns=keep_recent_turns,
             summary_prompt=summary_prompt,
             fallback_summary=fallback_summary,
         )

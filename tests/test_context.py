@@ -1,6 +1,14 @@
 from fakes import ScriptedClient
 from radix.context import ContextManager, estimate_tokens
-from radix.messages import ChatResult, assistant_message, system_message, user_message
+from radix.messages import (
+    ChatResult,
+    ToolCall,
+    assistant_message,
+    assistant_tool_call_message,
+    system_message,
+    tool_message,
+    user_message,
+)
 
 
 # Tests for ContextManager: token estimation, compaction and summarization.
@@ -106,3 +114,44 @@ def test_custom_fallback_summary():
     cm.fallback_summary = "custom fallback"
     out = cm.prepare(build_messages())
     assert "custom fallback" in out[1]["content"]
+
+
+def test_compact_keeps_whole_turns():
+    cm, _ = make_manager([ChatResult(content="S")], budget=100000)
+    cm.keep_recent = 1
+    cm.keep_recent_turns = 1
+    messages = build_messages(n_body=8)
+    out = cm.compact(messages)
+    # The last complete turn (user + assistant) survives even though
+    # keep_recent alone would only have kept the trailing assistant message.
+    assert out[2:] == messages[-2:]
+    assert out[1]["content"] == "[Summary of the earlier conversation]\nS"
+
+
+def test_compact_keeps_requested_turn_count():
+    cm, _ = make_manager([ChatResult(content="S")], budget=100000)
+    cm.keep_recent_turns = 2
+    messages = build_messages(n_body=8)
+    out = cm.compact(messages)
+    assert out[2:] == messages[-4:]
+
+
+def test_compact_turn_boundary_respects_tool_messages():
+    client = ScriptedClient([ChatResult(content="S")])
+    cm = ContextManager(
+        client, max_context_tokens=100000, reserve_output_tokens=0, keep_recent=1
+    )
+    messages = [
+        system_message("s"),
+        user_message("u1"),
+        assistant_tool_call_message(
+            "", [ToolCall(id="c1", name="ls", raw_arguments="{}")]
+        ),
+        tool_message("c1", "file list"),
+        assistant_message("done listing"),
+        user_message("u2"),
+        assistant_message("done again"),
+    ]
+    out = cm.compact(messages)
+    assert out[1]["content"] == "[Summary of the earlier conversation]\nS"
+    assert out[2:] == messages[5:]

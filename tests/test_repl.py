@@ -23,11 +23,11 @@ def make_assistant(results, tools=None):
     )
 
 
-def make_repl():
+def make_repl(**options):
     assistant = make_assistant([])
     io = StringIO()
     console = Console(file=io, force_terminal=False, width=80)
-    return Repl(assistant, console=console), io
+    return Repl(assistant, console=console, **options), io
 
 
 def run_repl(assistant, inputs):
@@ -189,7 +189,7 @@ def test_repl_status_bar_shows_context():
 
     messages = status_messages(assistant)
     used = assistant.context.message_tokens(messages)
-    budget = assistant.context.budget
+    budget = assistant.context.max_context_tokens
     bar = bar_text(captured)
     assert f"context: {_format_tokens(used)} / {_format_tokens(budget)} tok" in bar
     assert f"· {len(messages)} messages" in bar
@@ -221,7 +221,8 @@ def test_repl_status_bar_after_undo_all():
     used = assistant.context.message_tokens(messages)
     bar = bar_text(captured)
     assert f"context: {_format_tokens(used)}" in bar
-    assert f"· 1 messages · {round(100 * used / assistant.context.budget)}%" in bar
+    pct = round(100 * used / assistant.context.max_context_tokens)
+    assert f"· 1 messages · {pct}%" in bar
 
 
 def test_repl_status_bar_after_compact():
@@ -284,6 +285,51 @@ def test_repl_status_bar_grows_across_tool_rounds(tmp_path):
     ]
     assert len(bars) >= 3
     assert any(b < n for b, n in zip(bars, bars[1:]))
+
+
+def test_repl_status_bar_persists_tool_work_between_turns(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("v0")
+    write = lambda content: ChatResult(  # noqa: E731
+        tool_calls=[
+            ToolCall(
+                id="c",
+                name="write_file",
+                raw_arguments=json.dumps({"path": str(path), "content": content}),
+            )
+        ]
+    )
+    assistant = make_assistant(
+        [write("A" * 800), ChatResult(content="written"), ChatResult(content="second")],
+        tools=[write_file],
+    )
+    bars = []
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console)
+
+    def prompt(*_a, **_k):
+        bars.append("".join(part for _, part in _k["bottom_toolbar"]()))
+        return inputs.pop(0)
+
+    inputs = ["first", "second", "/exit"]
+    repl._session = type("S", (), {"prompt": staticmethod(prompt)})()
+    repl.run()
+
+    assert "write_file" in json.dumps(assistant.coordinator.history)
+    used_before = _parse_tokens(
+        re.findall(r"context: ([\d.]+k|\d+) / [\d.]+k tok", bars[0])[0]
+    )
+    used_after_t1 = _parse_tokens(
+        re.findall(r"context: ([\d.]+k|\d+) / [\d.]+k tok", bars[1])[0]
+    )
+    used_after_t2 = _parse_tokens(
+        re.findall(r"context: ([\d.]+k|\d+) / [\d.]+k tok", bars[2])[0]
+    )
+    # Turn 1's tool output (~800 chars ≈ 200 tokens) stays in the bar.
+    assert used_after_t1 - used_before >= 150
+    # No snap-back: the second prompt's bar still shows the tool work.
+    assert used_after_t2 >= used_after_t1
 
 
 def test_repl_survives_errors():
@@ -375,7 +421,7 @@ def test_repl_eof_exits():
 
 
 def test_repl_renders_edit_diff():
-    repl, io = make_repl()
+    repl, io = make_repl(show_subagent_tool_outputs=True)
     ev = repl.events
     diff = (
         "Edited /tmp/app.py.\n"
@@ -396,7 +442,7 @@ def test_repl_renders_edit_diff():
 
 
 def test_repl_renders_plain_tool_output_uncapped():
-    repl, io = make_repl()
+    repl, io = make_repl(show_subagent_tool_outputs=True)
     ev = repl.events
     output = "\n".join(f"line {i}" for i in range(60))
     ev.on_tool_output("coder", "read_file", output)
@@ -407,7 +453,7 @@ def test_repl_renders_plain_tool_output_uncapped():
 
 
 def test_repl_renders_edit_error_as_plain_output():
-    repl, io = make_repl()
+    repl, io = make_repl(show_subagent_tool_outputs=True)
     ev = repl.events
     ev.on_tool_output(
         "coder", "edit_file", "Error: old_string not found in /tmp/app.py."
@@ -421,3 +467,62 @@ def test_repl_hides_delegation_tool_output():
     ev = repl.events
     ev.on_tool_output("coordinator", "ask_coder", "the sub-agent's answer")
     assert "the sub-agent's answer" not in io.getvalue()
+
+
+def test_repl_subagent_tool_output_hidden_by_default():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_start("coder")
+    ev.on_stop("coder", 0.1, False)
+    ev.on_activity("coder", 'read_file {"path": "main.py"}')
+    ev.on_tool_output("coder", "read_file", "secret file content")
+    out = io.getvalue()
+    assert "• coder: read_file" in out
+    assert "secret file content" not in out
+
+
+def test_repl_subagent_tool_output_shown_when_enabled():
+    repl, io = make_repl(show_subagent_tool_outputs=True)
+    ev = repl.events
+    ev.on_tool_output("coder", "read_file", "file content")
+    assert "file content" in io.getvalue()
+
+
+def test_repl_no_context_bar_for_subagents_by_default():
+    repl, io = make_repl()
+    ev = repl.events
+    ev.on_activity("coordinator", 'ask_coder {"task": "t"}')
+    ev.on_start("coder")
+    ev.on_delta("coder", "thinking")
+    ev.on_tool_output("coder", "read_file", "out")
+    ev.on_stop("coder", 0.2, True)
+    out = io.getvalue()
+    assert "context:" not in out
+
+
+def test_repl_shows_subagent_context_bar_when_enabled():
+    repl, io = make_repl(show_subagent_context=True, show_subagent_tool_outputs=True)
+    ev = repl.events
+    ev.on_activity("coordinator", 'ask_coder {"task": "t"}')
+    ev.on_start("coder")
+    ev.on_delta("coder", "thinking")
+    ev.on_tool_output("coder", "read_file", "a" * 200)
+    ev.on_stop("coder", 0.2, True)
+    out = io.getvalue()
+    assert "coder context: " in out
+    assert "coordinator context: " not in out
+
+
+def test_repl_subagent_context_is_seeded_then_grows():
+    repl, io = make_repl(show_subagent_context=True, show_subagent_tool_outputs=True)
+    ev = repl.events
+    parse = lambda text: _parse_tokens(  # noqa: E731
+        re.findall(r"coder context: ([\d.]+k|\d+) /", text)[0]
+    )
+    ev.on_activity("coordinator", 'ask_coder {"task": "hello"}')
+    before = parse(repl._bar_text("coder"))
+    ev.on_activity("coder", 'read_file {"path": "a.py"}')
+    ev.on_tool_output("coder", "read_file", "b" * 400)
+    ev.on_stop("coder", 0.2, True)
+    after = parse(repl._bar_text("coder"))
+    assert after > before

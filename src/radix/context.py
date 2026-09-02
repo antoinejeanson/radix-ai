@@ -11,13 +11,16 @@ if TYPE_CHECKING:
 # ContextManager: keeps a conversation within a token budget by summarizing
 # (compacting) the oldest messages when it overflows.
 SUMMARY_PROMPT = (
-    "Summarize the conversation transcript below concisely. Keep all facts, decisions, "
-    "results and pending tasks. Reply with the summary only."
+    "Summarize the conversation transcript below concisely. Keep all facts, "
+    "decisions, results and pending tasks. Distinguish assistant statements "
+    "from tool results and from the answers of delegated sub-agents, and "
+    "retain the important tool results. Reply with the summary only."
 )
 FALLBACK_SUMMARY = "(earlier messages were dropped to fit the context window)"
 DEFAULT_MAX_CONTEXT_TOKENS = 8192
 DEFAULT_RESERVE_OUTPUT_TOKENS = 2048
 DEFAULT_KEEP_RECENT = 4
+DEFAULT_KEEP_RECENT_TURNS = 1
 
 
 def estimate_tokens(text: str) -> int:
@@ -48,6 +51,7 @@ class ContextManager:
         max_context_tokens: int = DEFAULT_MAX_CONTEXT_TOKENS,
         reserve_output_tokens: int = DEFAULT_RESERVE_OUTPUT_TOKENS,
         keep_recent: int = DEFAULT_KEEP_RECENT,
+        keep_recent_turns: int = DEFAULT_KEEP_RECENT_TURNS,
         summary_prompt: str = SUMMARY_PROMPT,
         fallback_summary: str = FALLBACK_SUMMARY,
         token_estimator: Callable[[str], int] | None = None,
@@ -61,8 +65,13 @@ class ContextManager:
             reserve_output_tokens: Tokens reserved for the model's answer;
                 the conversation budget is
                 max_context_tokens - reserve_output_tokens.
-            keep_recent: Number of most recent messages kept verbatim when
-                compacting; everything older is summarized.
+            keep_recent: Minimum number of most recent messages kept
+                verbatim when compacting; everything older is summarized.
+            keep_recent_turns: Number of most recent complete turns kept
+                verbatim when compacting (a turn runs from a user message
+                through the following assistant message, including any tool
+                calls and results). When a single turn has more messages
+                than `keep_recent`, whole turns are preferred.
             summary_prompt: System prompt for the summarization completion.
             fallback_summary: Message used when summarization fails or the
                 model returns nothing usable.
@@ -70,8 +79,10 @@ class ContextManager:
                 count; defaults to `estimate_tokens` (~4 chars/token).
         """
         self.client = client
+        self.max_context_tokens = max_context_tokens
         self.budget = max_context_tokens - reserve_output_tokens
         self.keep_recent = keep_recent
+        self.keep_recent_turns = keep_recent_turns
         self.summary_prompt = summary_prompt
         self.fallback_summary = fallback_summary
         self._estimate = token_estimator or estimate_tokens
@@ -84,7 +95,8 @@ class ContextManager:
 
         Returns:
             Estimated token count: 4 per message plus the estimate of every
-            string value in it.
+            string value in it, plus each tool call's name and serialized
+            arguments.
         """
         total = 0
         for message in messages:
@@ -92,6 +104,13 @@ class ContextManager:
             for value in message.values():
                 if isinstance(value, str):
                     total += self._estimate(value)
+            for call in message.get("tool_calls") or ():
+                function = call.get("function", {})
+                total += (
+                    4
+                    + self._estimate(function.get("name", ""))
+                    + self._estimate(function.get("arguments", ""))
+                )
         return total
 
     def prepare(self, messages: list[Message]) -> list[Message]:
@@ -107,14 +126,39 @@ class ContextManager:
             return messages
         return self.compact(messages)
 
+    def _recent_cut(self, body: list[Message]) -> int:
+        """Index where the verbatim tail starts, walking whole turns back.
+
+        Walks backward from the end of `body`, counting user messages as
+        turn starts, until `keep_recent_turns` turns have been collected.
+        The result never cuts below `keep_recent` trailing messages.
+
+        Args:
+            body: The conversation without the leading system prompt.
+
+        Returns:
+            The index of the first message to keep verbatim; 0 when
+            everything fits.
+        """
+        turns = 0
+        cut = 0
+        for i in range(len(body) - 1, -1, -1):
+            if body[i].get("role") == "user":
+                turns += 1
+                if turns >= self.keep_recent_turns:
+                    cut = i
+                    break
+        return min(cut, max(0, len(body) - self.keep_recent))
+
     def compact(self, messages: list[Message]) -> list[Message]:
         """Compact a conversation eagerly, summarizing the oldest messages.
 
         This is `prepare` without the budget check: the oldest messages are
         summarized even when the list is still within budget. The leading
-        system prompt (if any) and the `keep_recent` newest messages stay
-        verbatim, and the result is trimmed to fit the budget when the
-        summary is not enough.
+        system prompt (if any) and the most recent messages stay verbatim —
+        at least `keep_recent` of them, or the last `keep_recent_turns`
+        complete turns when that is more — and the result is trimmed to fit
+        the budget when the summary is not enough.
 
         Args:
             messages: The conversation to compact.
@@ -130,7 +174,10 @@ class ContextManager:
         if len(body) <= self.keep_recent:
             return messages
 
-        old, recent = body[: -self.keep_recent], body[-self.keep_recent :]
+        cut = self._recent_cut(body)
+        if cut <= 0:
+            return messages
+        old, recent = body[:cut], body[cut:]
         summary = self._summarize(old)
         summary_message: Message = {
             "role": "system",
@@ -151,6 +198,9 @@ class ContextManager:
     def _summarize(self, messages: list[Message]) -> str:
         """Ask the model to summarize a stretch of conversation.
 
+        Builds a role-prefixed transcript so the summarizer can tell
+        assistant statements, tool results and delegation answers apart.
+
         Args:
             messages: Messages to summarize (roles plus text content).
 
@@ -161,8 +211,23 @@ class ContextManager:
         lines = []
         for message in messages:
             content = message.get("content")
-            if isinstance(content, str) and content.strip():
-                lines.append(f"{message.get('role')}: {content}")
+            if not (isinstance(content, str) and content.strip()):
+                continue
+            role = message.get("role")
+            if role == "assistant" and message.get("tool_calls"):
+                names = ", ".join(
+                    c.get("function", {}).get("name", "?")
+                    for c in message["tool_calls"]
+                )
+                lines.append(f"assistant (called {names}): {content}")
+            elif role == "assistant":
+                lines.append(f"assistant: {content}")
+            elif role == "tool":
+                lines.append(f"tool result: {content}")
+            elif role == "system":
+                lines.append(f"system: {content}")
+            else:
+                lines.append(f"{role}: {content}")
         if not lines:
             return self.fallback_summary
         transcript = "\n".join(lines)

@@ -41,7 +41,7 @@ explorer = Agent(
 # - The default 8k context is tight for code; 16k fits a small GGUF while
 #   leaving room for files, diffs and tool output.
 # - More recent turns survive compaction, because coding sessions are
-#   iterative.
+#   iterative; keep a few whole turns verbatim.
 # - More tool rounds because coding is multi-step.
 # - The coordinator is stateful, so tools live on it directly: a coding
 #   session builds on its own earlier turns (sub-agents start fresh every
@@ -53,6 +53,7 @@ radix_code = Assistant(
     max_context_tokens=32767,  # match your llama.cpp -c value
     reserve_output_tokens=3072,
     keep_recent=6,
+    keep_recent_turns=3,
     max_tool_rounds=16,
     system_prompt=(
         "You are radix-code, a senior software engineer working on the user's "
@@ -75,7 +76,7 @@ radix_code = Assistant(
     tool_gates={
         "run_shell": LlmAutoSafetyGate(client, confirm_unsafe=True),
     },
-    tools=[edit_file, write_file, ask_question],
+    tools=[read_file, run_shell, edit_file, write_file, ask_question],
 )
 
 if __name__ == "__main__":

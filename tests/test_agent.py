@@ -82,7 +82,7 @@ def test_events_callbacks():
     events = Events(
         on_start=starts.append,
         on_delta=lambda name, text: deltas.append((name, text)),
-        on_activity=lambda name, text: activity.append((name, text)),
+        on_activity=lambda name, text, raw="": activity.append((name, text)),
         on_tool_output=lambda name, tool_name, output: outputs.append(
             (name, tool_name, output)
         ),
@@ -303,6 +303,44 @@ def test_compact_noop_when_history_is_short():
         {"role": "user", "content": "first"},
         {"role": "assistant", "content": "one"},
     ]
+
+
+def test_stateful_history_keeps_tool_work():
+    client = ScriptedClient(
+        [
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="add", raw_arguments='{"a": 2, "b": 3}')
+                ]
+            ),
+            ChatResult(content="five"),
+            ChatResult(content="again answer"),
+        ]
+    )
+    context = ContextManager(client, max_context_tokens=100000, reserve_output_tokens=0)
+    agent = Agent(
+        "tester",
+        system_prompt="be brief",
+        tools=[add],
+        client=client,
+        context=context,
+        stateful=True,
+        permission_gate=AutoApproveGate(),
+    )
+    agent.run("add 2 and 3")
+
+    roles = [m["role"] for m in agent.history]
+    assert roles == ["user", "assistant", "tool", "assistant"]
+    assert agent.history[0]["content"] == "add 2 and 3"
+    assert agent.history[1]["tool_calls"][0]["function"]["name"] == "add"
+    assert agent.history[2]["content"] == "5"
+    assert agent.history[3]["content"] == "five"
+
+    # The next run re-sends the remembered tool work verbatim.
+    agent.run("again")
+    sent = client.stream_calls[2]["messages"]
+    sent_roles = [m["role"] for m in sent]
+    assert sent_roles == ["system", "user", "assistant", "tool", "assistant", "user"]
 
 
 def test_compact_noop_without_context_or_state():

@@ -66,7 +66,7 @@ def test_delegation_flow_keeps_coordinator_context_clean():
     assert tool_result["content"] == "print('hello')"
 
 
-def test_history_only_user_and_final_answer():
+def test_history_keeps_tool_work_and_delegation_result():
     coordinator, _, _ = make_setup(
         [
             ChatResult(
@@ -79,9 +79,12 @@ def test_history_only_user_and_final_answer():
         ]
     )
     coordinator.run("first question")
-    assert [m["role"] for m in coordinator.history] == ["user", "assistant"]
+    roles = [m["role"] for m in coordinator.history]
+    assert roles == ["user", "assistant", "tool", "assistant"]
     assert coordinator.history[0]["content"] == "first question"
-    assert coordinator.history[1]["content"] == "final answer"
+    assert coordinator.history[1]["tool_calls"][0]["function"]["name"] == "ask_coder"
+    assert coordinator.history[2]["content"] == "sub answer"
+    assert coordinator.history[3]["content"] == "final answer"
 
     coordinator.reset()
     assert coordinator.history == []

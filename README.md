@@ -140,9 +140,23 @@ Inside the REPL: `/help` for commands, `/compact` to summarize the old
 conversation right away (reducing the context without waiting for the budget),
 `/undo` to revert the last turn (files and conversation), `Ctrl+D` to exit. A
 status line always shows the current context usage
-(e.g. `context: 1.2k / 6.1k tok · 14 messages · 19%`): under the input while
+(e.g. `context: 3.4k / 8.2k tok · 21 messages · 41%`): under the input while
 waiting, and through the whole turn — under the live views and after every
-tool call, so you can watch the context grow in real time.
+tool call, so you can watch the context grow in real time. The percentage is
+against `max_context_tokens` (the full window), and the count includes the
+tool calls and results the coordinator remembers.
+
+Sub-agents work quietly: their tool calls are listed, but their raw tool
+results stay hidden — each delegation just ends with the sub-agent's answer
+in a panel (with its total time). The context line is only the coordinator's;
+it is not shown while a sub-agent is working underneath it. The `Repl`
+constructor opts into more detail when you want it:
+
+- `Repl(..., show_subagent_tool_outputs=True)` prints every sub-agent tool
+  result as it runs (edits as colored diffs).
+- `Repl(..., show_subagent_context=True)` shows a context line for the
+  working sub-agent — an estimate of *its own* fresh conversation, labeled
+  with the agent's name — instead of hiding the line during sub-agent work.
 
 ---
 
@@ -320,12 +334,26 @@ sets the budget; when a conversation outgrows it, older messages are
 summarized by the model into a single compact message (and dropped if even
 that fails). The system prompt and the most recent messages always survive.
 
+A stateful agent (the coordinator) remembers everything it did: each turn's
+task, every tool call with its arguments, every tool result, and the final
+answer — plus, for delegations, the `ask_<name>` call and the sub-agent's
+answer (never the sub-agent's internal tool work, which stays private and
+stateless). That is what makes the next turn able to quote earlier tool
+results, and it is also what makes context grow faster — compaction is the
+safety valve.
+
+Compaction keeps whole turns verbatim: `keep_recent_turns` (default 1) keeps
+that many complete turns (a turn runs from a user message through the
+following assistant message, including any tool calls and results), never
+fewer than `keep_recent` trailing messages.
+
 Every limit is a plain constructor kwarg with a sensible default. On
 `Assistant`: `max_context_tokens`, `reserve_output_tokens`, `keep_recent`,
-`summary_prompt`, `fallback_summary`, and `max_tool_rounds` for the
-coordinator. On `Agent`, for a specific sub-agent: `max_tool_rounds`. The
-constants (`SUMMARY_PROMPT`, `FALLBACK_SUMMARY`, ...) are exported from
-`radix` if you want to tune relative to them.
+`keep_recent_turns`, `summary_prompt`, `fallback_summary`, and
+`max_tool_rounds` for the coordinator. On `Agent`, for a specific sub-agent:
+`max_tool_rounds`. The constants (`SUMMARY_PROMPT`, `FALLBACK_SUMMARY`,
+`DEFAULT_KEEP_RECENT_TURNS`, ...) are exported from `radix` if you want to
+tune relative to them.
 
 ---
 
