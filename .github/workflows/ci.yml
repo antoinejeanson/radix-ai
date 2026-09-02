@@ -31,5 +31,5 @@ jobs:
           python-version: "3.13"
       - name: Install dependencies
         run: uv sync --frozen
-      - name: Run tests
-        run: uv run pytest -q
+      - name: Run tests with coverage
+        run: uv run pytest -q --cov=src/radix --cov-report=term-missing
