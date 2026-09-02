@@ -1,5 +1,7 @@
+import os
+
 from fakes import ScriptedClient
-from radix import LlmSafetyChecker, tool
+from radix import SAFETY_SYSTEM_PROMPT, LlmSafetyChecker, tool
 from radix.messages import ChatResult
 
 
@@ -95,3 +97,28 @@ def test_checker_sends_prompt_and_description():
     assert call["messages"][1]["role"] == "user"
     assert "Tool: run" in call["messages"][1]["content"]
     assert "ls" in call["messages"][1]["content"]
+
+
+def test_system_prompt_includes_cwd():
+    checker, client = make_checker("SAFE\nok")
+    checker.check(run, {"command": "ls"})
+    content = client.complete_calls[0]["messages"][0]["content"]
+    assert "Current working directory:" in content
+    assert os.getcwd() in content
+
+
+def test_custom_cwd_is_used():
+    checker, client = make_checker("SAFE\nok", cwd="/some/project")
+    checker.check(run, {"command": "ls"})
+    content = client.complete_calls[0]["messages"][0]["content"]
+    assert "Current working directory: /some/project" in content
+
+
+def test_safety_prompt_covers_scope_and_privacy():
+    prompt = SAFETY_SYSTEM_PROMPT.lower()
+    assert "current working directory" in prompt
+    assert "inside the working directory" in prompt
+    assert "outside the working directory" in prompt
+    assert "parent" in prompt
+    assert "internet" in prompt
+    assert "sending local data" in prompt

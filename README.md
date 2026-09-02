@@ -299,6 +299,23 @@ assistant = Assistant(client=client, permission_gate=LlmAdvisoryGate(client))
 Both fail closed: a network error or an unparseable answer never auto-approves
 — the auto gate denies, the advisory gate falls back to the user prompt.
 
+Each check prefixes the system prompt with the current working directory
+(`Current working directory: ...`), so the reviewer judges the call against
+the project actually being worked on. The policy (`SAFETY_SYSTEM_PROMPT`, and
+see `LlmSafetyChecker(..., cwd=...)` to pin a scope) considers:
+
+- **Safe:** read-only and everyday operations; destructive edits *inside* the
+  working directory (deleting build artifacts, temp files, task-owned files);
+  plain read-only (GET) web fetches of docs and public pages.
+- **Dangerous:** destructive operations on paths *outside* the working
+  directory (parents, `..`, `/`, system dirs, the home directory, other
+  projects); whole-project or whole-system destruction even in-CWD (deleting
+  the repo root, wiping the main database, `rm -rf /`, `dd`, `mkfs`); and
+  **sending local data to the Internet** — uploads, POST/PUT/PATCH bodies with
+  local contents, `curl`/`wget`/`scp`/`ftp` pushing data to a server, or URLs
+  that encode private data. When the assistant runs locally for privacy,
+  things like `fetch_url` must not leak data to external hosts casually.
+
 #### Per-tool gates
 
 A single gate applies to every tool, but you can hand specific tools their own

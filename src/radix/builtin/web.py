@@ -24,6 +24,12 @@ def fetch_url(
     after `timeout` seconds (default 30). The body is decoded as UTF-8
     with replacement for invalid bytes.
 
+    Fetching is read-only, but it does send a request to a remote server:
+    never craft URLs that disclose private data — query strings, paths or
+    payloads built from local file contents are data exfiltration. In
+    privacy-sensitive sessions, prefer reading local files or asking the
+    user before reaching out to the network.
+
     Args:
         url: The URL to fetch.
         timeout: Maximum seconds before the request is aborted; 0 means
