@@ -7,12 +7,47 @@ Start a llama.cpp server with a matching context first, e.g.:
 Then run this file:
 
     uv run python examples/radix-code.py
+
+Sandboxed with Podman (edits and shell commands stay in the container):
+
+    podman build -t radix-sandbox .
+    mkdir -p ~/work
+    podman run --rm -it \
+        --network=host \
+        -v ~/work:/work \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/radix-code.py
+
+`--network=host` reuses the host's network stack, so the container reaches
+the llama.cpp server on `localhost:8080` directly — no extra flags, and it
+works even when the server binds only the loopback interface.
+
+For network isolation instead, keep the default bridge and let the container
+reach the host through the gateway. That requires the llama.cpp server to
+listen on all interfaces (`--host 0.0.0.0`, not the default 127.0.0.1):
+
+    llama-server -m your-model.gguf -c 32768 --host 0.0.0.0 --port 8080
+
+    podman run --rm -it \
+        --network=pasta \
+        --add-host host.containers.internal:host-gateway \
+        -e RADIX_BASE_URL=http://host.containers.internal:8080/v1 \
+        -v ~/work:/work \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/radix-code.py
 """
+
+import os
 
 from radix import Agent, Assistant, AutoApproveGate, Client, LlmAutoSafetyGate
 from radix.builtin import ask_question, edit_file, read_file, run_shell, write_file
 
-client = Client(model="radix", base_url="http://localhost:8080/v1")
+client = Client(
+    model="radix",
+    base_url=os.environ.get("RADIX_BASE_URL", "http://localhost:8080/v1"),
+)
 
 # The explorer is a sub-agent that handles repo-wide exploration.  Its
 # stateless runs start with a fresh context every time, so the coordinator's

@@ -28,6 +28,52 @@ Usage:
 Start a model server first, e.g.:
 
     llama-server -m your-model.gguf -c 32768 --port 8080
+
+Sandboxed with Podman (all tool calls are auto-approved, so this is safe
+to run where edits and shell commands stay inside the container):
+
+    podman build -t radix-sandbox .
+    mkdir -p ~/work
+
+    # Single task:
+    podman run --rm \
+        --network=host \
+        -v ~/work:/work \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/benchmark-code.py "Fix the bug in src/radix/agent.py"
+
+    # Tasks from stdin, results to stdout (no -t, to keep it scriptable):
+    echo -e "Task 1\\nTask 2" | podman run --rm -i \
+        --network=host \
+        -v ~/work:/work \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/benchmark-code.py > results.json
+
+    # Tasks from a file, mounted into the container:
+    podman run --rm -i \
+        --network=host \
+        -v ~/work:/work \
+        -v "$PWD/tasks.txt:/tasks.txt:ro" \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/benchmark-code.py < tasks.txt \
+        > ~/work/results.json
+
+`--network=host` reaches the llama.cpp server on `localhost:8080` directly
+(works when the server binds only loopback). For network isolation instead,
+restart llama-server with `--host 0.0.0.0` and pass a gateway base URL:
+
+    podman run --rm -i \
+        --network=pasta \
+        --add-host host.containers.internal:host-gateway \
+        -v ~/work:/work \
+        -w /work \
+        radix-sandbox \
+        python /app/examples/benchmark-code.py \
+        --base-url http://host.containers.internal:8080/v1 \
+        < tasks.txt > results.json
 """
 
 import argparse
