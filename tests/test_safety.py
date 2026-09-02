@@ -86,13 +86,6 @@ def test_describe_contains_tool_and_arguments():
     )
 
 
-def test_describe_truncates_long_arguments():
-    checker, _ = make_checker("SAFE\nok", argument_char_limit=20)
-    description = checker.describe(run, {"command": "x" * 100})
-    assert "..." in description
-    assert len(description) < 60
-
-
 def test_checker_sends_prompt_and_description():
     checker, client = make_checker("SAFE\nok")
     checker.check(run, {"command": "ls"})

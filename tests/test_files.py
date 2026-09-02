@@ -25,12 +25,57 @@ def test_read_file_binary(tmp_path):
     assert "UTF-8" in out
 
 
-def test_read_file_truncation(tmp_path):
+def test_read_file_default_line_cap_reports_remaining(tmp_path):
     path = tmp_path / "big.txt"
-    path.write_text("x" * 20000)
+    path.write_text("\n".join(f"line {i}" for i in range(1500)))
     out = read_file.run(path=str(path))
-    assert out.endswith("[content truncated]")
-    assert len(out) < 20000
+    assert out.startswith("[Showing lines 1-1000 of 1500]")
+    assert "line 999" in out
+    assert "line 1000" not in out
+    assert "[500 more lines remain]" in out
+
+
+def test_read_file_offset_pages_past_the_cap(tmp_path):
+    path = tmp_path / "big.txt"
+    path.write_text("\n".join(f"line {i}" for i in range(1500)))
+    out = read_file.run(path=str(path), offset=1000)
+    assert out == "line 1000\n" + "\n".join(f"line {i}" for i in range(1001, 1500))
+
+
+def test_read_file_all_lines_with_negative_limit(tmp_path):
+    path = tmp_path / "big.txt"
+    path.write_text("\n".join(f"line {i}" for i in range(1500)))
+    out = read_file.run(path=str(path), limit=-1)
+    assert out == "\n".join(f"line {i}" for i in range(1500))
+
+
+def test_read_file_offset_and_limit(tmp_path):
+    path = tmp_path / "n.txt"
+    path.write_text("\n".join(f"line {i}" for i in range(10)))
+    assert read_file.run(path=str(path), offset=3, limit=7) == (
+        "line 3\n" + "\n".join(f"line {i}" for i in range(4, 10))
+    )
+
+
+def test_read_file_partial_window_reports_remaining(tmp_path):
+    path = tmp_path / "n.txt"
+    path.write_text("\n".join(f"line {i}" for i in range(10)))
+    out = read_file.run(path=str(path), offset=3, limit=2)
+    assert out == "[Showing lines 4-5 of 10]\nline 3\nline 4\n[5 more lines remain]"
+
+
+def test_read_file_limit_without_remaining_is_plain(tmp_path):
+    path = tmp_path / "n.txt"
+    path.write_text("\n".join(f"line {i}" for i in range(5)))
+    assert read_file.run(path=str(path), limit=5) == (
+        "line 0\nline 1\nline 2\nline 3\nline 4"
+    )
+
+
+def test_read_file_empty_file(tmp_path):
+    path = tmp_path / "empty.txt"
+    path.write_text("")
+    assert read_file.run(path=str(path)) == ""
 
 
 def test_edit_file_replaces_snippet(tmp_path):

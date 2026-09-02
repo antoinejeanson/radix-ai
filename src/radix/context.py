@@ -15,7 +15,6 @@ SUMMARY_PROMPT = (
     "results and pending tasks. Reply with the summary only."
 )
 FALLBACK_SUMMARY = "(earlier messages were dropped to fit the context window)"
-TRANSCRIPT_CHAR_LIMIT = 12000
 DEFAULT_MAX_CONTEXT_TOKENS = 8192
 DEFAULT_RESERVE_OUTPUT_TOKENS = 2048
 DEFAULT_KEEP_RECENT = 4
@@ -51,7 +50,6 @@ class ContextManager:
         keep_recent: int = DEFAULT_KEEP_RECENT,
         summary_prompt: str = SUMMARY_PROMPT,
         fallback_summary: str = FALLBACK_SUMMARY,
-        transcript_char_limit: int = TRANSCRIPT_CHAR_LIMIT,
         token_estimator: Callable[[str], int] | None = None,
     ) -> None:
         """Create a context manager with a token budget.
@@ -68,8 +66,6 @@ class ContextManager:
             summary_prompt: System prompt for the summarization completion.
             fallback_summary: Message used when summarization fails or the
                 model returns nothing usable.
-            transcript_char_limit: Maximum characters of old conversation
-                sent to the summarizer in one completion.
             token_estimator: Callable mapping text to an estimated token
                 count; defaults to `estimate_tokens` (~4 chars/token).
         """
@@ -78,7 +74,6 @@ class ContextManager:
         self.keep_recent = keep_recent
         self.summary_prompt = summary_prompt
         self.fallback_summary = fallback_summary
-        self.transcript_char_limit = transcript_char_limit
         self._estimate = token_estimator or estimate_tokens
 
     def message_tokens(self, messages: list[Message]) -> int:
@@ -170,7 +165,7 @@ class ContextManager:
                 lines.append(f"{message.get('role')}: {content}")
         if not lines:
             return self.fallback_summary
-        transcript = "\n".join(lines)[: self.transcript_char_limit]
+        transcript = "\n".join(lines)
         try:
             result = self.client.complete(
                 [

@@ -206,11 +206,11 @@ one agent with a few tools, and that's exactly what Radix supports too.
 
 | Tool        | What it does                                                          |
 | ----------- | --------------------------------------------------------------------- |
-| `read_file` | Read a text file (UTF-8, truncated to keep context small).            |
+| `read_file` | Read a text file's lines (UTF-8) with `offset`/`limit` paging (default 1000 lines); when lines remain it reports the range shown and how many are left so the agent can page further. |
 | `edit_file` | Replace one exact, unique snippet — returns a unified diff.           |
 | `write_file`| Create or overwrite a file, creating parent directories as needed.    |
-| `run_shell` | Run a shell command (120s timeout, output truncated).                 |
-| `fetch_url` | Fetch a web page.                                                     |
+| `run_shell` | Run a shell command (default 120s timeout, default 500-line output cap, both agent-configurable; a footer reports cut lines). |
+| `fetch_url` | Fetch a web page (default 30s timeout, default 500-line body cap, both agent-configurable; a footer reports cut lines). |
 
 Whether any of these prompt for approval is the permission gate's decision,
 not the tool's: with the default gate every call asks; with `AutoApproveGate`
@@ -322,13 +322,10 @@ that fails). The system prompt and the most recent messages always survive.
 
 Every limit is a plain constructor kwarg with a sensible default. On
 `Assistant`: `max_context_tokens`, `reserve_output_tokens`, `keep_recent`,
-`summary_prompt`, `fallback_summary`, `transcript_char_limit`, and
-`max_tool_rounds` / `max_tool_output_chars` for the coordinator. On `Agent`,
-for a specific sub-agent: `max_tool_rounds`, `max_tool_output_chars`. On
-`Repl`, for the terminal: `max_output_lines`. The defaults
-(`DEFAULT_MAX_TOOL_OUTPUT_CHARS`, `SUMMARY_PROMPT`, `TRANSCRIPT_CHAR_LIMIT`,
-`MAX_OUTPUT_LINES`, ...) are exported from `radix` if you want to tune
-relative to them.
+`summary_prompt`, `fallback_summary`, and `max_tool_rounds` for the
+coordinator. On `Agent`, for a specific sub-agent: `max_tool_rounds`. The
+constants (`SUMMARY_PROMPT`, `FALLBACK_SUMMARY`, ...) are exported from
+`radix` if you want to tune relative to them.
 
 ---
 

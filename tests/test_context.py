@@ -86,7 +86,7 @@ def test_prepare_keeps_everything_when_body_too_small_to_compact():
     assert cm.prepare(messages) == messages
 
 
-def test_custom_summary_prompt_and_transcript_limit():
+def test_custom_summary_prompt():
     client = ScriptedClient([ChatResult(content="S")])
     cm = ContextManager(
         client,
@@ -94,12 +94,10 @@ def test_custom_summary_prompt_and_transcript_limit():
         reserve_output_tokens=0,
         keep_recent=2,
         summary_prompt="my custom prompt",
-        transcript_char_limit=10,
     )
     out = cm.prepare(build_messages())
     call = client.complete_calls[0]["messages"]
     assert call[0] == {"role": "system", "content": "my custom prompt"}
-    assert len(call[1]["content"]) <= 10
     assert out[1]["content"] == "[Summary of the earlier conversation]\nS"
 
 

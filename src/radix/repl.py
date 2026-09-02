@@ -29,8 +29,6 @@ HELP_TEXT = """commands:
   /undo all  revert everything (files and conversation)
   /exit    quit (Ctrl+D also works)"""
 
-MAX_OUTPUT_LINES = 40
-
 
 def _diff_text(output: str) -> Text:
     text = Text()
@@ -67,7 +65,6 @@ class Repl:
         self,
         assistant: Assistant,
         *,
-        max_output_lines: int = MAX_OUTPUT_LINES,
         console: Console | None = None,
     ) -> None:
         """Create the REPL.
@@ -75,13 +72,10 @@ class Repl:
         Args:
             assistant: The Assistant to chat with; must already be fully
                 configured and bound.
-            max_output_lines: Most lines of tool output shown per tool call;
-                longer output is truncated with a marker.
             console: Rich console to render on; a new one is created when
                 None.
         """
         self.assistant = assistant
-        self.max_output_lines = max_output_lines
         self.console = console or Console()
         self._session: PromptSession[str] = PromptSession(history=InMemoryHistory())
         self._live: Live | None = None
@@ -345,14 +339,11 @@ class Repl:
         if tool_name.startswith("ask_"):
             self.console.print(f"[dim]{self._bar_text()}[/dim]")
             return
-        lines = output.splitlines()
-        capped = "\n".join(lines[: self.max_output_lines])
-        if len(lines) > self.max_output_lines:
-            capped += "\n[dim]... [output truncated][/dim]"
+
         if tool_name == "edit_file" and not output.startswith("Error"):
-            self.console.print(_diff_text(capped))
+            self.console.print(_diff_text(output))
         else:
-            self.console.print(Text(capped, style="dim"))
+            self.console.print(Text(output, style="dim"))
         self.console.print(f"[dim]{self._bar_text()}[/dim]")
 
     def _on_stop(

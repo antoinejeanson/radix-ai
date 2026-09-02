@@ -17,8 +17,8 @@ client = Client(model="radix", base_url="http://localhost:8080/v1")
 # Sane defaults for agentic coding:
 # - The default 8k context is tight for code; 16k fits a small GGUF while
 #   leaving room for files, diffs and tool output.
-# - More recent turns survive compaction, and transcripts summarize less
-#   aggressively, because coding sessions are iterative.
+# - More recent turns survive compaction, because coding sessions are
+#   iterative.
 # - More tool rounds because coding is multi-step.
 # - The coordinator is stateful, so tools live on it directly: a coding
 #   session builds on its own earlier turns (sub-agents start fresh every
@@ -29,9 +29,7 @@ radix_code = Assistant(
     max_context_tokens=32767,  # match your llama.cpp -c value
     reserve_output_tokens=3072,
     keep_recent=6,
-    transcript_char_limit=16000,
     max_tool_rounds=16,
-    max_tool_output_chars=24000,
     system_prompt=(
         "You are radix-code, a senior software engineer working on the user's machine. "
         "Work step by step: inspect the project with read_file and run_shell before "

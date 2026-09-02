@@ -25,23 +25,7 @@ if TYPE_CHECKING:
 
 # Agent: a system prompt plus a set of tools; runs the streaming tool-call
 # loop, compacts context, and enforces permission gates on every call.
-DEFAULT_MAX_TOOL_OUTPUT_CHARS = 16000
 DEFAULT_MAX_TOOL_ROUNDS = 8
-
-
-def _truncate(text: str, limit: int) -> str:
-    """Cut `text` to `limit` characters, appending a marker when cut.
-
-    Args:
-        text: The tool output to truncate.
-        limit: Maximum number of characters to keep.
-
-    Returns:
-        The output, possibly shortened with a trailing marker.
-    """
-    if len(text) <= limit:
-        return text
-    return text[:limit] + "\n... [output truncated]"
 
 
 def _describe_call(call: ToolCall) -> str:
@@ -80,7 +64,6 @@ class Agent:
         permission_gate: PermissionGate | None = None,
         tool_gates: dict[str, PermissionGate] | None = None,
         max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
-        max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         stateful: bool = False,
         pre_tool_hook: Callable[[Tool, dict[str, Any]], None] | None = None,
     ) -> None:
@@ -111,8 +94,6 @@ class Agent:
                 unknown ones.
             max_tool_rounds: At most this many model/tool rounds per run;
                 afterwards the agent is forced to answer without tools.
-            max_tool_output_chars: Longest tool output kept in the
-                conversation; anything longer is truncated with a marker.
             stateful: When True, `run()` appends the task and its answer to
                 `history` so the next run continues the conversation. The
                 coordinator uses True; sub-agents default to False.
@@ -131,7 +112,6 @@ class Agent:
         self._permission_gate_explicit = permission_gate is not None
         self._tool_gates_explicit = tool_gates is not None
         self.max_tool_rounds = max_tool_rounds
-        self.max_tool_output_chars = max_tool_output_chars
         self.stateful = stateful
         self.pre_tool_hook = pre_tool_hook
         self.history: list[Message] = []
@@ -318,4 +298,4 @@ class Agent:
             return f"Error: invalid arguments for tool '{call.name}': {exc}"
         except Exception as exc:
             return f"Error while running tool '{call.name}': {exc}"
-        return _truncate(output, self.max_tool_output_chars)
+        return output

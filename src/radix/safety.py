@@ -25,8 +25,6 @@ SAFETY_SYSTEM_PROMPT = (
     "line is one short sentence saying why."
 )
 
-SAFETY_ARGUMENT_CHAR_LIMIT = 2000
-
 
 @dataclass
 class SafetyVerdict:
@@ -102,7 +100,6 @@ class LlmSafetyChecker:
         client: Client,
         *,
         system_prompt: str = SAFETY_SYSTEM_PROMPT,
-        argument_char_limit: int = SAFETY_ARGUMENT_CHAR_LIMIT,
     ) -> None:
         """Create the safety checker.
 
@@ -110,12 +107,9 @@ class LlmSafetyChecker:
             client: Client used for the safety completion.
             system_prompt: Instructions for the reviewing model; defaults
                 to SAFETY_SYSTEM_PROMPT.
-            argument_char_limit: Maximum characters of serialized arguments
-                sent to the model; anything longer is cut with a marker.
         """
         self._client = client
         self._system_prompt = system_prompt
-        self._argument_char_limit = argument_char_limit
 
     def describe(self, tool: Tool, arguments: dict[str, Any]) -> str:
         """Format one tool call as the text handed to the safety model.
@@ -125,12 +119,9 @@ class LlmSafetyChecker:
             arguments: Its parsed arguments, serialized as JSON.
 
         Returns:
-            A "Tool: <name>\nArguments: <json>" block, with arguments
-            truncated to `argument_char_limit`.
+            A "Tool: <name>\nArguments: <json>" block.
         """
         args = json.dumps(arguments, ensure_ascii=False)
-        if len(args) > self._argument_char_limit:
-            args = args[: self._argument_char_limit] + "..."
         return f"Tool: {tool.name}\nArguments: {args}"
 
     def check(self, tool: Tool, arguments: dict[str, Any]) -> SafetyVerdict:

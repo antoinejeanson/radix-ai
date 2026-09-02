@@ -5,29 +5,47 @@ import urllib.request
 from ..tool import tool
 
 # Built-in web tool: fetch_url retrieves HTTP(S) pages as text, with a
-# timeout and a body size cap.
-MAX_BODY_CHARS = 16000
-TIMEOUT_SECONDS = 30
+# line-limited output cap and a timeout, both configurable by the agent.
+DEFAULT_MAX_BODY_LINES = 500
+DEFAULT_TIMEOUT_SECONDS = 30
 
 
 @tool
-def fetch_url(url: str) -> str:
+def fetch_url(
+    url: str,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+    max_body_lines: int = DEFAULT_MAX_BODY_LINES,
+) -> str:
     """Fetch a URL over HTTP(S) and return the response body as text.
 
+    The body is capped at `max_body_lines` lines (default 500); when the
+    page has more, a footer reports how many lines were cut so the agent
+    can fetch a more targeted URL or endpoint. The request times out
+    after `timeout` seconds (default 30). The body is decoded as UTF-8
+    with replacement for invalid bytes.
+
     Args:
-        url: The URL to fetch. Times out after TIMEOUT_SECONDS; the body is
-            capped at MAX_BODY_CHARS characters and decoded as UTF-8 with
-            replacement for invalid bytes.
+        url: The URL to fetch.
+        timeout: Maximum seconds before the request is aborted; 0 means
+            no timeout.
+        max_body_lines: Maximum lines of body text returned, after which
+            the output is cut with a footer; 0 means unlimited.
 
     Returns:
-        The response body, or an error message.
+        The response body of the requested line window, or an error
+        message.
     """
     request = urllib.request.Request(url, headers={"User-Agent": "radix"})
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            body = response.read(MAX_BODY_CHARS + 1).decode("utf-8", errors="replace")
+        with urllib.request.urlopen(
+            request, timeout=timeout if timeout > 0 else None
+        ) as response:
+            body = response.read().decode("utf-8", errors="replace")
     except Exception as exc:
         return f"Error: could not fetch {url}: {exc}"
-    if len(body) > MAX_BODY_CHARS:
-        body = body[:MAX_BODY_CHARS] + "\n... [body truncated]"
+    lines = body.splitlines()
+    if max_body_lines > 0 and len(lines) > max_body_lines:
+        cut = len(lines) - max_body_lines
+        body = "\n".join(lines[:max_body_lines])
+        body += f"\n... [body truncated — {cut} more lines]"
     return body

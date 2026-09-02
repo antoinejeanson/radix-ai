@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .agent import DEFAULT_MAX_TOOL_OUTPUT_CHARS, DEFAULT_MAX_TOOL_ROUNDS, Agent
+from .agent import DEFAULT_MAX_TOOL_ROUNDS, Agent
 from .client import DEFAULT_API_KEY, DEFAULT_BASE_URL, DEFAULT_MODEL, Client
 from .context import (
     DEFAULT_KEEP_RECENT,
@@ -10,7 +10,6 @@ from .context import (
     DEFAULT_RESERVE_OUTPUT_TOKENS,
     FALLBACK_SUMMARY,
     SUMMARY_PROMPT,
-    TRANSCRIPT_CHAR_LIMIT,
     ContextManager,
 )
 from .coordinator import Coordinator
@@ -49,9 +48,7 @@ class Assistant:
         keep_recent: int = DEFAULT_KEEP_RECENT,
         summary_prompt: str = SUMMARY_PROMPT,
         fallback_summary: str = FALLBACK_SUMMARY,
-        transcript_char_limit: int = TRANSCRIPT_CHAR_LIMIT,
         max_tool_rounds: int = DEFAULT_MAX_TOOL_ROUNDS,
-        max_tool_output_chars: int = DEFAULT_MAX_TOOL_OUTPUT_CHARS,
         permission_gate: PermissionGate | None = None,
         tool_gates: dict[str, PermissionGate] | None = None,
         client: Client | None = None,
@@ -85,12 +82,8 @@ class Assistant:
                 conversation during compaction.
             fallback_summary: Summary message used when summarization fails
                 or returns nothing.
-            transcript_char_limit: Maximum characters of old conversation
-                handed to the summarizer in one call.
             max_tool_rounds: Maximum model/tool rounds for the coordinator
                 per user message.
-            max_tool_output_chars: Longest tool output kept by the
-                coordinator; longer outputs are truncated.
             permission_gate: Gate for the coordinator and for any agent that
                 does not pass an explicit gate of its own. Defaults to a
                 CliPermissionGate that prompts.
@@ -113,7 +106,6 @@ class Assistant:
             keep_recent=keep_recent,
             summary_prompt=summary_prompt,
             fallback_summary=fallback_summary,
-            transcript_char_limit=transcript_char_limit,
         )
         agents = list(agents or [])
         for agent in agents:
@@ -127,7 +119,6 @@ class Assistant:
             permission_gate=self.permission_gate,
             tool_gates=self.tool_gates,
             max_tool_rounds=max_tool_rounds,
-            max_tool_output_chars=max_tool_output_chars,
         )
         self._validate_tool_gates()
         self.coordinator.pre_tool_hook = self._snapshot_tool_call

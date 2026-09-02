@@ -6,21 +6,33 @@ import os
 from ..tool import tool
 from ..undo import _write_atomic
 
-# Built-in file tools: read_file (capped reads), edit_file (unique-snippet
-# replace with a diff), write_file (atomic create/overwrite).
-MAX_CONTENT_CHARS = 16000
+# Built-in file tools: read_file (line-limited reads with offset/limit),
+# edit_file (unique-snippet replace with a diff), write_file (atomic
+# create/overwrite).
+DEFAULT_MAX_READ_LINES = 1000
 
 
 @tool
-def read_file(path: str) -> str:
+def read_file(path: str, offset: int = 0, limit: int = DEFAULT_MAX_READ_LINES) -> str:
     """Read a text file from the local filesystem and return its contents.
 
+    The file is read line by line: `offset` skips lines, and `limit`
+    caps how many lines are returned (default 1000). Use both to page
+    through large files. When the file has more lines than returned, a
+    header and footer report the range shown and how many lines remain,
+    so the agent knows the file is bigger and can page back.
+
     Args:
-        path: File to read; `~` is expanded. Content is capped at
-            MAX_CONTENT_CHARS characters.
+        path: File to read; `~` is expanded.
+        offset: Number of lines to skip from the start (0 starts at the
+            first line).
+        limit: Maximum number of lines to return, -1 for all the lines
+            after `offset`.
 
     Returns:
-        The file contents, or an error message.
+        The file contents of the requested line range. When lines remain,
+        a header and footer describe the range shown and how many lines
+        remain. Errors start with "Error: ".
     """
     path = os.path.expanduser(path)
     if not os.path.exists(path):
@@ -29,13 +41,25 @@ def read_file(path: str) -> str:
         return f"Error: {path} is a directory, not a file"
     try:
         with open(path, encoding="utf-8") as f:
-            content = f.read(MAX_CONTENT_CHARS + 1)
+            all_lines = f.readlines()
     except UnicodeDecodeError:
         return f"Error: {path} does not look like a UTF-8 text file"
     except OSError as exc:
         return f"Error: could not read {path}: {exc}"
-    if len(content) > MAX_CONTENT_CHARS:
-        content = content[:MAX_CONTENT_CHARS] + "\n... [content truncated]"
+    total = len(all_lines)
+    if offset < 0:
+        offset = 0
+    if limit < 0:
+        limit = total
+    selected = all_lines[offset : offset + limit]
+    content = "".join(selected)
+    if offset + len(selected) < total:
+        if content and not content.endswith("\n"):
+            content += "\n"
+        return (
+            f"[Showing lines {offset + 1}-{offset + len(selected)} of {total}]\n"
+            f"{content}[{total - offset - len(selected)} more lines remain]"
+        )
     return content
 
 
