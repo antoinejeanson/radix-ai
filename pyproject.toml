@@ -5,8 +5,10 @@ description = "Modular AI agent for small, memory-limited LLMs"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
+    "coverage>=7.16.0",
     "openai>=1.54",
     "prompt-toolkit>=3.0",
+    "pytest-cov>=7.1.0",
     "rich>=13.7",
 ]
 
