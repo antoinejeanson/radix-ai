@@ -90,11 +90,45 @@ def _extract_reason(text: str) -> str:
     return lines[0] if lines else ""
 
 
+# Negation words that flip a verdict keyword's meaning when they immediately
+# precede it ("not dangerous" means safe, not dangerous).
+_NEGATION_RE = re.compile(
+    r"\b(?:"
+    r"NOT|NO|NEVER|ISN'T|IS NOT|AREN'T|ARE NOT|DON'T|DO NOT|WON'T|WILL NOT|"
+    r"CAN'T|CANNOT|SHOULDN'T|SHOULD NOT|MUST NOT|MUSTN'T"
+    r")\s+\Z"
+)
+
+
+def _keyword_states(upper: str, keyword: str) -> tuple[bool, bool]:
+    """Classify the occurrences of `keyword` in `upper`.
+
+    Args:
+        upper: The upper-cased answer text.
+        keyword: The verdict keyword to look for (e.g. "DANGEROUS").
+
+    Returns:
+        A (bare, negated) tuple: bare is True when the keyword occurs not
+        immediately preceded by a negation word, negated is True when it
+        occurs immediately preceded by one ("NOT DANGEROUS").
+    """
+    bare = False
+    negated = False
+    for match in re.finditer(r"\b" + keyword + r"\b", upper):
+        if _NEGATION_RE.search(upper[: match.start()]):
+            negated = True
+        else:
+            bare = True
+    return bare, negated
+
+
 def parse_verdict(text: str) -> SafetyVerdict:
     """Parse a model answer into a verdict.
 
-    Fail-closed: dangerous keywords win, and an answer with no recognizable
-    verdict is treated as not safe.
+    Fail-closed: a non-negated dangerous keyword wins over a safe one, and
+    an answer with no recognizable verdict is treated as not safe. A verdict
+    keyword immediately preceded by a negation word has its meaning flipped
+    ("not dangerous" is safe, "not safe" is not).
 
     Args:
         text: The model's answer.
@@ -103,11 +137,19 @@ def parse_verdict(text: str) -> SafetyVerdict:
         A SafetyVerdict with the parsed outcome and reason.
     """
     upper = text.upper()
-    if re.search(r"\bDANGEROUS\b", upper):
+    dangerous_bare, dangerous_neg = _keyword_states(upper, "DANGEROUS")
+    unsafe_bare, unsafe_neg = _keyword_states(upper, "UNSAFE")
+    safe_bare, _safe_neg = _keyword_states(upper, "SAFE")
+    not_safe = re.search(r"\bNOT\s+SAFE\b", upper) is not None
+
+    # A non-negated DANGEROUS/UNSAFE, or an explicit "NOT SAFE", is not safe.
+    if dangerous_bare or unsafe_bare or not_safe:
         return SafetyVerdict(safe=False, reason=_extract_reason(text))
-    if re.search(r"\bUNSAFE\b|\bNOT\s+SAFE\b", upper):
-        return SafetyVerdict(safe=False, reason=_extract_reason(text))
-    if re.search(r"\bSAFE\b", upper):
+    # A non-negated SAFE is safe.
+    if safe_bare:
+        return SafetyVerdict(safe=True, reason=_extract_reason(text))
+    # Only negated dangerous/unsafe ("not dangerous", "not unsafe") -> safe.
+    if dangerous_neg or unsafe_neg:
         return SafetyVerdict(safe=True, reason=_extract_reason(text))
     snippet = " ".join(text.split())
     if len(snippet) > 80:

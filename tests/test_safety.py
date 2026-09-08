@@ -47,6 +47,27 @@ def test_dangerous_wins_over_safe():
     assert checker.check(run, {"command": "x"}).safe is False
 
 
+def test_not_dangerous_is_safe():
+    checker, _ = make_checker("not dangerous\nit only lists files")
+    assert checker.check(run, {"command": "ls"}).safe is True
+
+
+def test_not_unsafe_is_safe():
+    checker, _ = make_checker("not unsafe\nit is a normal read")
+    assert checker.check(run, {"command": "ls"}).safe is True
+
+
+def test_isnt_dangerous_is_safe():
+    checker, _ = make_checker("isn't dangerous\nread-only")
+    assert checker.check(run, {"command": "ls"}).safe is True
+
+
+def test_bare_dangerous_still_wins_over_negated():
+    # A non-negated DANGEROUS must not be masked by a negated one elsewhere.
+    checker, _ = make_checker("not dangerous, but also DANGEROUS\nreason")
+    assert checker.check(run, {"command": "x"}).safe is False
+
+
 def test_safety_word_does_not_count():
     checker, _ = make_checker("SAFETY first, then we decide")
     verdict = checker.check(run, {"command": "x"})
