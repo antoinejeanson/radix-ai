@@ -2,7 +2,7 @@ import types
 
 import httpx2
 import pytest
-from openai import APIStatusError
+from openai import APIConnectionError, APIStatusError
 
 from radix import DEFAULT_BASE_URL, Client, Usage
 from radix.messages import ChatResult
@@ -201,3 +201,130 @@ def test_complete_without_usage():
     message = types.SimpleNamespace(content="ok", tool_calls=None)
     client = make_client(FakeCompletions(message=message))
     assert client.complete([{"role": "user", "content": "hi"}]).usage is None
+
+
+# --- retry with exponential backoff ---
+
+
+def _conn_error():
+    return APIConnectionError(request=httpx2.Request("POST", "http://test"))
+
+
+def _status_error(code):
+    return lambda: APIStatusError(
+        "boom",
+        response=httpx2.Response(code, request=httpx2.Request("POST", "http://test")),
+        body=None,
+    )
+
+
+class FlakyCompletions:
+    """create() fails `failures` times with error_factory(), then succeeds."""
+
+    def __init__(self, failures, error_factory, chunks=None, message=None):
+        self.failures = failures
+        self.error_factory = error_factory
+        self.chunks = chunks or []
+        self.message = message
+        self.calls = 0
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        self.calls += 1
+        self.kwargs = kwargs
+        if self.calls <= self.failures:
+            raise self.error_factory()
+        if kwargs.get("stream"):
+            return iter(self.chunks)
+        return types.SimpleNamespace(
+            choices=[types.SimpleNamespace(message=self.message)], usage=None
+        )
+
+
+def make_retry_client(completions, retries=3):
+    api = types.SimpleNamespace(chat=types.SimpleNamespace(completions=completions))
+    return Client(
+        model="test-model", openai_client=api, retries=retries, backoff_base=0
+    )
+
+
+def test_complete_retries_connection_errors():
+    message = types.SimpleNamespace(content="ok", tool_calls=None)
+    completions = FlakyCompletions(2, _conn_error, message=message)
+    client = make_retry_client(completions, retries=3)
+    assert client.complete([{"role": "user", "content": "hi"}]).content == "ok"
+    assert completions.calls == 3  # 2 failures + 1 success
+
+
+def test_complete_retries_429():
+    message = types.SimpleNamespace(content="ok", tool_calls=None)
+    completions = FlakyCompletions(1, _status_error(429), message=message)
+    client = make_retry_client(completions, retries=3)
+    assert client.complete([{"role": "user", "content": "hi"}]).content == "ok"
+    assert completions.calls == 2
+
+
+def test_complete_does_not_retry_400():
+    completions = FlakyCompletions(999, _status_error(400), message=None)
+    client = make_retry_client(completions, retries=3)
+    with pytest.raises(APIStatusError):
+        client.complete([{"role": "user", "content": "hi"}])
+    assert completions.calls == 1  # no retry on a plain 400
+
+
+def test_complete_retries_exhausted_raises():
+    completions = FlakyCompletions(999, _conn_error, message=None)
+    client = make_retry_client(completions, retries=3)
+    with pytest.raises(APIConnectionError):
+        client.complete([{"role": "user", "content": "hi"}])
+    assert completions.calls == 4  # 1 initial + 3 retries
+
+
+def test_complete_zero_retries_no_retry():
+    completions = FlakyCompletions(999, _conn_error, message=None)
+    client = make_retry_client(completions, retries=0)
+    with pytest.raises(APIConnectionError):
+        client.complete([{"role": "user", "content": "hi"}])
+    assert completions.calls == 1
+
+
+def _iter_then_raise(chunks, error):
+    for c in chunks:
+        yield c
+    raise error
+
+
+class StreamFailAfterCompletions:
+    """create() returns an iterator that yields chunks, then raises."""
+
+    def __init__(self, good_chunks, error_factory):
+        self.good_chunks = good_chunks
+        self.error_factory = error_factory
+        self.calls = 0
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        self.calls += 1
+        self.kwargs = kwargs
+        return _iter_then_raise(self.good_chunks, self.error_factory())
+
+
+def test_stream_retries_before_first_chunk():
+    # The request fails before any chunk is yielded, then succeeds: the
+    # whole open-and-iterate is retried and the caller sees a clean stream.
+    completions = FlakyCompletions(1, _conn_error, chunks=[text("ok")])
+    client = make_retry_client(completions, retries=3)
+    stream = client.chat_stream([{"role": "user", "content": "hi"}])
+    assert list(stream) == ["ok"]
+    assert completions.calls == 2
+
+
+def test_stream_does_not_retry_after_first_chunk():
+    # Once a chunk has been yielded the request can't be resumed, so a
+    # mid-stream failure is re-raised (and not retried).
+    completions = StreamFailAfterCompletions([text("par")], _conn_error)
+    client = make_retry_client(completions, retries=3)
+    stream = client.chat_stream([{"role": "user", "content": "hi"}])
+    with pytest.raises(APIConnectionError):
+        list(stream)
+    assert completions.calls == 1  # no second request
