@@ -1,3 +1,5 @@
+import json
+
 from fakes import ScriptedClient
 from radix import Agent, Assistant, AutoApproveGate, DenyGate, tool
 from radix.messages import ChatResult, ToolCall
@@ -181,3 +183,33 @@ def test_tool_gates_apply_to_subagent_tools():
     assert assistant.chat("research") == "coordinator answer"
     sub_round = client.stream_calls[2]
     assert "Permission denied" in sub_round["messages"][2]["content"]
+
+
+def test_export_transcript_writes_jsonl(tmp_path):
+    client = ScriptedClient(
+        [
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="ask_coder", raw_arguments='{"task": "t"}')
+                ]
+            ),
+            ChatResult(content="sub says hi"),
+            ChatResult(content="hi from coordinator"),
+        ]
+    )
+    assistant = Assistant(
+        client=client, agents=[Agent("coder")], permission_gate=AutoApproveGate()
+    )
+    assistant.chat("hello")
+
+    path = tmp_path / "out" / "transcript.jsonl"
+    count = assistant.export_transcript(str(path))
+    assert count == len(assistant.coordinator.history)
+    lines = path.read_text().splitlines()
+    assert len(lines) == count
+    messages = [json.loads(line) for line in lines]
+    # roles in order: user, assistant(tool call), tool, assistant
+    assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
+    # the tool call and its result stay paired by id
+    call_id = messages[1]["tool_calls"][0]["id"]
+    assert messages[2]["tool_call_id"] == call_id

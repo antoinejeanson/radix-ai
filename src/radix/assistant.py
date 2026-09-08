@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import os
 from typing import Any
 
 from .agent import DEFAULT_MAX_TOOL_ROUNDS, Agent
@@ -226,6 +228,28 @@ class Assistant:
             smaller list.
         """
         return self.coordinator.compact()
+
+    def export_transcript(self, path: str) -> int:
+        """Write the coordinator's conversation to a JSONL file.
+
+        Each message (system, user, assistant, tool call, tool result) is
+        one JSON line, preserving `tool_calls` and `tool_call_id` so calls
+        and results stay paired. Useful for debugging, sharing, or replaying
+        a run.
+
+        Args:
+            path: Destination file; parent directories are created as needed.
+
+        Returns:
+            The number of messages written.
+        """
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            for message in self.coordinator.history:
+                f.write(json.dumps(message, ensure_ascii=False) + "\n")
+        return len(self.coordinator.history)
 
     def reset(self) -> None:
         """Reset the assistant: forget the conversation and clear the undo

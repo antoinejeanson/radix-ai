@@ -182,6 +182,28 @@ def test_repl_compact_nothing_to_compact():
     assert "nothing to compact" in io.getvalue()
 
 
+def test_repl_transcript_command(tmp_path):
+    assistant = make_assistant([ChatResult(content="one"), ChatResult(content="two")])
+    path = str(tmp_path / "t.jsonl")
+    _, io = run_repl_captured(
+        assistant, ["first", "second", f"/transcript {path}", "/exit"]
+    )
+    expected = len(assistant.coordinator.history)
+    # (the full path may wrap at the console width, so match the prefix)
+    assert f"wrote {expected} messages" in io.getvalue()
+    lines = (tmp_path / "t.jsonl").read_text().splitlines()
+    assert len(lines) == expected
+    assert all(json.loads(line)["role"] in ("user", "assistant") for line in lines)
+
+
+def test_repl_transcript_default_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assistant = make_assistant([ChatResult(content="one")])
+    _, io = run_repl_captured(assistant, ["first", "/transcript", "/exit"])
+    assert "wrote 2 messages to radix-transcript.jsonl" in io.getvalue()
+    assert (tmp_path / "radix-transcript.jsonl").exists()
+
+
 def test_repl_status_bar_shows_context():
     assistant = make_assistant([ChatResult(content="answer one")])
     repl, captured = make_recording_repl(assistant, ["first", "/exit"])

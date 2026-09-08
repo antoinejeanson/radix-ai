@@ -30,6 +30,7 @@ HELP_TEXT = """commands:
   /undo    revert the last turn: restore changed files, rewind the conversation
   /undo N  revert the last N turns
   /undo all  revert everything (files and conversation)
+  /transcript [path]  write the conversation to a JSONL file
   /exit    quit (Ctrl+D also works)"""
 
 
@@ -321,6 +322,8 @@ class Repl:
             self._compact()
         elif command == "/undo":
             self._undo(words[1:])
+        elif command == "/transcript":
+            self._transcript(words[1:])
         else:
             self.console.print(f"[dim]unknown command: {command} — try /help[/dim]")
         return False
@@ -353,6 +356,16 @@ class Repl:
             )
         if not result.restored and result.history_depth is None:
             self.console.print("[dim]nothing to undo[/dim]")
+
+    def _transcript(self, args: list[str]) -> None:
+        """Implement `/transcript [path]`: write the conversation to JSONL.
+
+        Args:
+            args: The words after "/transcript"; the first is the path.
+        """
+        path = args[0] if args else "radix-transcript.jsonl"
+        count = self.assistant.export_transcript(path)
+        self.console.print(f"[dim]wrote {count} messages to {path}[/dim]")
 
     def _compact(self) -> None:
         """Implement `/compact`: summarize the old conversation now.
