@@ -381,6 +381,40 @@ def test_repl_subagent_panel_shows_total_time_and_reported_tokens():
     assert "~" not in out
 
 
+def test_repl_subagent_tracking_uses_real_name_for_sanitized_names():
+    # A sub-agent whose name needs sanitizing (hyphen): the REPL must track
+    # it under its REAL name, matching the events the sub-agent emits.
+    client = ScriptedClient([])
+    assistant = Assistant(
+        client=client,
+        agents=[Agent("code-review", system_prompt="be brief")],
+        permission_gate=AutoApproveGate(),
+    )
+    io = StringIO()
+    console = Console(file=io, force_terminal=False, width=80)
+    repl = Repl(assistant, console=console)
+    ev = repl.events
+    # The delegation tool is ask_code_review (sanitized from "code-review").
+    ev.on_activity(
+        "coordinator", 'ask_code_review {"task": "do work"}', '{"task": "do work"}'
+    )
+    # Tracking must be keyed by the real name, not the sanitized one.
+    assert "code-review" in repl._run_start
+    assert "code-review" in repl._sub_ctx
+    assert "code_review" not in repl._run_start
+    # The baseline includes the agent's system prompt (prompt + task = 2).
+    assert repl._sub_ctx["code-review"]["messages"] == 2
+    # The sub-agent emits events under its real name; the panel uses the
+    # recorded start time and reported tokens.
+    repl._run_start["code-review"] = time.monotonic() - 5.0
+    ev.on_start("code-review")
+    ev.on_delta("code-review", "result")
+    ev.on_stop("code-review", 0.1, True, Usage(total_tokens=50))
+    out = io.getvalue()
+    assert "5.0s" in out
+    assert "· 50 tok" in out
+
+
 def test_repl_resets_subagent_stats_between_delegations():
     repl, io = make_repl()
     ev = repl.events

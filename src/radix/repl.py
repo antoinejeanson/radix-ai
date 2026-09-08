@@ -14,6 +14,7 @@ from rich.spinner import Spinner
 from rich.text import Text
 
 from .context import estimate_tokens
+from .coordinator import safe_name
 from .events import Events
 
 if TYPE_CHECKING:
@@ -103,6 +104,13 @@ class Repl:
         self._status_override: int | None = None
         self._status_message_count = 0
         self._sub_ctx: dict[str, dict[str, int]] = {}
+        # Maps each delegation tool name (ask_<safe_name>) to the sub-agent's
+        # real name, so tracking keyed by the real name works even when the
+        # name needs sanitizing (e.g. hyphens).
+        self._delegation_by_tool: dict[str, str] = {
+            f"ask_{safe_name(a.name)}": a.name
+            for a in self.assistant.coordinator.agents
+        }
         self.events = Events(
             on_start=self._on_start,
             on_delta=self._on_delta,
@@ -437,7 +445,10 @@ class Repl:
                 self._status_message_count += 1
             tool_name = text.split()[0].split("{")[0] if text.split() else ""
             if tool_name.startswith("ask_"):
-                target = tool_name[4:]
+                # Resolve the sub-agent's real name from the (sanitized)
+                # delegation tool name, so tracking keyed by the real name
+                # matches the events the sub-agent emits under that name.
+                target = self._delegation_by_tool.get(tool_name, tool_name[4:])
                 self._run_start[target] = time.monotonic()
                 self._tokens.pop(target, None)
                 self._estimated.pop(target, None)

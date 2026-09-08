@@ -18,7 +18,7 @@ DEFAULT_COORDINATOR_PROMPT = (
 )
 
 
-def _safe_name(name: str) -> str:
+def safe_name(name: str) -> str:
     """Make a name safe for a tool name (alphanumerics and underscore).
 
     Args:
@@ -50,7 +50,7 @@ def delegation_tool(agent: Agent, parent: Agent | None = None) -> Tool:
         return agent.run(task, events=events)
 
     return Tool(
-        name=f"ask_{_safe_name(agent.name)}",
+        name=f"ask_{safe_name(agent.name)}",
         description=(
             f"Delegate a task to the '{agent.name}' sub-agent. {agent.description} "
             "The sub-agent cannot see this conversation, so the task must be "
