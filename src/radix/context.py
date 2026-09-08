@@ -148,7 +148,15 @@ class ContextManager:
                 if turns >= self.keep_recent_turns:
                     cut = i
                     break
-        return min(cut, max(0, len(body) - self.keep_recent))
+        cut = min(cut, max(0, len(body) - self.keep_recent))
+        # Never start the verbatim tail on an orphaned tool result: if the
+        # first kept message is a tool message, the assistant tool_calls
+        # message that owns it would be summarized away, leaving a dangling
+        # tool result the model (and any provider) would reject. Walk back to
+        # the message that owns those tool results.
+        while cut > 0 and body[cut].get("role") == "tool":
+            cut -= 1
+        return cut
 
     def compact(self, messages: list[Message]) -> list[Message]:
         """Compact a conversation eagerly, summarizing the oldest messages.

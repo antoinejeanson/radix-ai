@@ -155,3 +155,40 @@ def test_compact_turn_boundary_respects_tool_messages():
     out = cm.compact(messages)
     assert out[1]["content"] == "[Summary of the earlier conversation]\nS"
     assert out[2:] == messages[5:]
+
+
+def test_compact_does_not_orphan_tool_results():
+    # When the keep_recent clamp lands in the middle of a tool round, the
+    # verbatim tail must not start on an orphaned tool result (whose
+    # assistant tool_calls message would otherwise be summarized away).
+    client = ScriptedClient([ChatResult(content="S")])
+    cm = ContextManager(
+        client,
+        max_context_tokens=100000,
+        reserve_output_tokens=0,
+        keep_recent=3,
+        keep_recent_turns=1,
+    )
+    tc = assistant_tool_call_message(
+        "", [ToolCall(id="c1", name="ls", raw_arguments="{}")]
+    )
+    messages = [
+        system_message("s"),
+        user_message("u1"),
+        tc,
+        tool_message("c1", "first"),
+        tool_message("c1", "second"),
+        user_message("u2"),
+        assistant_message("final"),
+    ]
+    out = cm.compact(messages)
+    kept = out[2:]
+    # The tail must not start with a tool message.
+    assert kept[0].get("role") != "tool", kept
+    # Every kept tool result must have its owning assistant tool_calls
+    # message earlier in the kept tail.
+    for i, message in enumerate(kept):
+        if message.get("role") == "tool":
+            assert any(k.get("tool_calls") for k in kept[:i]), (
+                f"orphaned tool result at kept[{i}]"
+            )
