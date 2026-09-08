@@ -1,6 +1,6 @@
 import pytest
 
-from fakes import ScriptedClient
+from fakes import FakeStream, ScriptedClient
 from radix import Agent, AutoApproveGate, DenyGate, Events, Usage, tool
 from radix.context import ContextManager
 from radix.messages import ChatResult, ToolCall
@@ -430,3 +430,79 @@ def test_stateful_system_prompt_keeps_summary_and_no_dup():
     assert any("SUMMARY TEXT" in (m.get("content") or "") for m in agent.history), (
         agent.history
     )
+
+
+class _CompactingClient:
+    """Like ScriptedClient but `complete` returns a fixed summary instead of
+    popping a scripted result, so the test is robust to however many times
+    compaction fires during the run."""
+
+    def __init__(self, chat_results, summary="SUMMARY"):
+        self._chat = list(chat_results)
+        self._summary = summary
+        self.stream_calls = []
+        self.complete_calls = []
+
+    def chat_stream(self, messages, tools=None):
+        self.stream_calls.append({"messages": list(messages), "tools": tools})
+        return FakeStream(self._chat.pop(0))
+
+    def complete(self, messages, tools=None):
+        self.complete_calls.append({"messages": list(messages), "tools": tools})
+        return ChatResult(content=self._summary)
+
+
+def _exhausted_agent(client, budget, keep_recent):
+    context = ContextManager(
+        client,
+        max_context_tokens=budget,
+        reserve_output_tokens=0,
+        keep_recent=keep_recent,
+        keep_recent_turns=1,
+        token_estimator=lambda s: len(s),  # deterministic token counts
+    )
+    agent = Agent(
+        "tester",
+        tools=[add],
+        client=client,
+        context=context,
+        stateful=True,
+        max_tool_rounds=1,
+        permission_gate=AutoApproveGate(),
+    )
+    agent.history = [
+        {"role": "user", "content": "q1 " + "x" * 30},
+        {"role": "assistant", "content": "a1 " + "y" * 30},
+    ]
+    return agent, context
+
+
+def test_rounds_exhausted_keeps_last_tool_round():
+    # Regression: when max_tool_rounds is exhausted AND compaction fires, the
+    # last tool call and its result used to be missing from the persisted
+    # history (last_prepared was captured before they were appended).
+    client = _CompactingClient(
+        [
+            ChatResult(
+                tool_calls=[
+                    ToolCall(id="c1", name="add", raw_arguments='{"a": 2, "b": 3}')
+                ]
+            ),
+            ChatResult(content="final answer"),
+        ]
+    )
+    agent, context = _exhausted_agent(client, budget=220, keep_recent=4)
+    assert agent.run("add 2 and 3") == "final answer"
+
+    # The final round must have been compacted (a summary was requested).
+    assert client.complete_calls, "expected the final round to be compacted"
+    # The last tool call and its result must be in the persisted history.
+    assert any(m.get("tool_calls") for m in agent.history), agent.history
+    assert any(
+        m.get("role") == "tool" and m.get("content") == "5" for m in agent.history
+    ), agent.history
+    # And the final answer is the last message.
+    assert agent.history[-1] == {"role": "assistant", "content": "final answer"}
+    # The final round stayed within the token budget.
+    final_messages = client.stream_calls[-1]["messages"]
+    assert context.message_tokens(final_messages) <= context.budget

@@ -194,7 +194,9 @@ class Agent:
         Stores the last prepared (compacted) working list — which includes
         the user task, every assistant tool-call message, its tool results
         (and delegation results), and the final answer — so the next run
-        can quote prior tool work. The leading system prompt is dropped
+        can quote prior tool work. When the tool rounds were exhausted, the
+        synthetic round-exhaustion nudge is kept too: the memory is a
+        faithful transcript of what the model saw. The leading system prompt is dropped
         (it is re-added at send time), and the final assistant answer is
         appended when it is not already the last message (i.e. the final
         round produced a plain answer with no tool call). A compaction
@@ -267,7 +269,11 @@ class Agent:
         Returns:
             A tuple of the agent's final answer and the last prepared
             (possibly compacted) message list the model saw, which is the
-            basis for the stateful agent's persisted memory.
+            basis for the stateful agent's persisted memory. When the tool
+            rounds are exhausted, the forced final round is also prepared
+            (compacted) first, and its prepared list — including the last
+            tool call and result, plus the round-exhaustion nudge — is what
+            gets persisted.
         """
         tool_schemas = [t.schema() for t in self.tools] or None
         last_prepared = messages
@@ -296,7 +302,9 @@ class Agent:
                 "without calling any tools."
             )
         )
-        final = self._chat_round(messages, None, events)
+        prepared = self.context.prepare(messages) if self.context else messages
+        last_prepared = prepared
+        final = self._chat_round(prepared, None, events)
         return final.content, last_prepared
 
     def _execute(self, call: ToolCall) -> str:
