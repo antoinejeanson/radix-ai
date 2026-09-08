@@ -39,19 +39,25 @@ def read_file(path: str, offset: int = 0, limit: int = DEFAULT_MAX_READ_LINES) -
         return f"Error: no such file or directory: {path}"
     if os.path.isdir(path):
         return f"Error: {path} is a directory, not a file"
+    if offset < 0:
+        offset = 0
+    # Stream the file line by line instead of readlines(): the file iterator
+    # reads in chunks and yields one line at a time, so a large file is not
+    # held in memory all at once. We still pass over every line to count the
+    # total (needed for the range header), but only the requested window is
+    # kept.
     try:
         with open(path, encoding="utf-8") as f:
-            all_lines = f.readlines()
+            total = 0
+            selected: list[str] = []
+            for line in f:
+                if total >= offset and (limit < 0 or total < offset + limit):
+                    selected.append(line)
+                total += 1
     except UnicodeDecodeError:
         return f"Error: {path} does not look like a UTF-8 text file"
     except OSError as exc:
         return f"Error: could not read {path}: {exc}"
-    total = len(all_lines)
-    if offset < 0:
-        offset = 0
-    if limit < 0:
-        limit = total
-    selected = all_lines[offset : offset + limit]
     content = "".join(selected)
     if offset + len(selected) < total:
         if content and not content.endswith("\n"):

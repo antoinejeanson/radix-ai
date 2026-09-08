@@ -78,6 +78,22 @@ def test_read_file_empty_file(tmp_path):
     assert read_file.run(path=str(path)) == ""
 
 
+def test_read_file_large_file_streams_without_holding_it_all(tmp_path):
+    # A file far larger than the window: the total is still reported (a full
+    # pass is needed to count it) but only the requested lines are returned.
+    n = 100_000
+    path = tmp_path / "huge.txt"
+    with path.open("w") as f:
+        for i in range(n):
+            f.write(f"line {i}\n")
+    out = read_file.run(path=str(path), offset=0, limit=10)
+    assert out.startswith("[Showing lines 1-10 of 100000]")
+    assert "line 0\n" in out
+    assert "line 9\n" in out
+    assert "line 10\n" not in out
+    assert f"[{n - 10} more lines remain]" in out
+
+
 def test_edit_file_replaces_snippet(tmp_path):
     path = tmp_path / "app.py"
     path.write_text("def greet():\n    print('hi')\n")
