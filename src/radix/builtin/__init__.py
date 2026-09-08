@@ -8,6 +8,7 @@ tools themselves.
 # fetching — everything a quick assistant needs out of the box.
 from .ask import ask_question
 from .files import edit_file, read_file, write_file
+from .memory import recall, remember
 from .shell import run_shell
 from .web import fetch_url
 
@@ -16,6 +17,8 @@ __all__ = [
     "edit_file",
     "fetch_url",
     "read_file",
+    "recall",
+    "remember",
     "run_shell",
     "write_file",
 ]
