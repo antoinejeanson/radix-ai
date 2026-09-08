@@ -69,7 +69,7 @@ def read_file(path: str, offset: int = 0, limit: int = DEFAULT_MAX_READ_LINES) -
     return content
 
 
-@tool
+@tool(snapshot=True)
 def edit_file(path: str, old_string: str, new_string: str) -> str:
     """Edit a text file by replacing one exact snippet with another.
 
@@ -127,7 +127,7 @@ def edit_file(path: str, old_string: str, new_string: str) -> str:
     return f"Edited {path}.\n{diff}"
 
 
-@tool
+@tool(snapshot=True)
 def write_file(path: str, content: str) -> str:
     """Create or overwrite a text file with the given content. Parent
     directories are created as needed.

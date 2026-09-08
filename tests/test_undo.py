@@ -2,7 +2,7 @@ import json
 import os
 
 from fakes import ScriptedClient
-from radix import Agent, Assistant, AutoApproveGate
+from radix import Agent, Assistant, AutoApproveGate, tool
 from radix.builtin import edit_file, write_file
 from radix.messages import ChatResult, ToolCall
 from radix.undo import UndoLog
@@ -318,6 +318,69 @@ def test_assistant_reset_clears_undo_log(tmp_path):
     assert len(assistant.undo_log) == 0
     assert assistant.undo().restored == []
     assert path.read_text() == "v1"
+
+
+def _overwrite_tool(snapshot: bool):
+    # A custom file-mutating tool; `snapshot` controls undo opt-in.
+    @tool(snapshot=snapshot)
+    def overwrite(path: str, content: str) -> str:
+        """Overwrite a file with the given content."""
+        with open(path, "w") as f:
+            f.write(content)
+        return f"wrote {path}"
+
+    return overwrite
+
+
+def _overwrite_client(path, content):
+    return ScriptedClient(
+        [
+            ChatResult(
+                tool_calls=[
+                    ToolCall(
+                        id="c1",
+                        name="overwrite",
+                        raw_arguments=json.dumps(
+                            {"path": str(path), "content": content}
+                        ),
+                    )
+                ]
+            ),
+            ChatResult(content="done"),
+        ]
+    )
+
+
+def test_custom_snapshot_tool_is_undone(tmp_path):
+    # A custom file-mutating tool opts into undo via @tool(snapshot=True).
+    path = tmp_path / "c.txt"
+    path.write_text("original")
+    assistant = Assistant(
+        client=_overwrite_client(path, "changed"),
+        tools=[_overwrite_tool(snapshot=True)],
+        permission_gate=AutoApproveGate(),
+    )
+    assistant.chat("change it")
+    assert path.read_text() == "changed"
+    result = assistant.undo()
+    assert result.restored == [str(path)]
+    assert path.read_text() == "original"
+
+
+def test_non_snapshot_tool_is_not_undone(tmp_path):
+    # A tool without snapshot=True does not get its file snapshotted.
+    path = tmp_path / "c.txt"
+    path.write_text("original")
+    assistant = Assistant(
+        client=_overwrite_client(path, "changed"),
+        tools=[_overwrite_tool(snapshot=False)],
+        permission_gate=AutoApproveGate(),
+    )
+    assistant.chat("change it")
+    assert path.read_text() == "changed"
+    result = assistant.undo()
+    assert result.restored == []
+    assert path.read_text() == "changed"  # not restored
 
 
 def _mode(path):

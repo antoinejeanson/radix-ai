@@ -33,8 +33,6 @@ class Assistant:
     OpenAI-compatible endpoint works via `base_url`.
     """
 
-    _SNAPSHOT_TOOLS = frozenset({"edit_file", "write_file"})
-
     def __init__(
         self,
         model: str = DEFAULT_MODEL,
@@ -167,14 +165,18 @@ class Assistant:
             )
 
     def _snapshot_tool_call(self, tool: Tool, arguments: dict[str, Any]) -> None:
-        """Pre-tool hook: snapshot files about to be edited or overwritten.
+        """Pre-tool hook: snapshot files a tool is about to mutate.
+
+        Whether a tool snapshots is the tool's own declaration (the
+        `snapshot` flag, set via `@tool(snapshot=True)`), not a hardcoded
+        name list, so custom file-mutating tools opt in by setting the flag.
 
         Args:
             tool: The tool about to run.
             arguments: Its parsed arguments; `path` names the file to
                 snapshot when present.
         """
-        if tool.name in self._SNAPSHOT_TOOLS and "path" in arguments:
+        if tool.snapshot and "path" in arguments:
             self.undo_log.snapshot(str(arguments["path"]))
 
     def chat(self, text: str, *, events: Events | None = None) -> str:

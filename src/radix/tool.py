@@ -85,12 +85,16 @@ class Tool:
         fn: The implementation, called with keyword arguments parsed from
             the model's call. Its return value (stringified if needed)
             becomes the tool output message.
+        snapshot: When True, the assistant snapshots the `path` argument
+            (if present) into its undo log before the tool runs, so a later
+            /undo can restore the file. Set on file-mutating tools.
     """
 
     name: str
     description: str
     parameters: dict[str, Any]
     fn: Callable[..., Any]
+    snapshot: bool = False
 
     def run(self, **kwargs: Any) -> str:
         """Call the tool with keyword arguments.
@@ -126,6 +130,7 @@ def tool(
     *,
     name: str | None = None,
     description: str | None = None,
+    snapshot: bool = False,
 ) -> Tool | Callable[[Callable[..., Any]], Tool]:
     """Decorator turning a typed Python function into a Tool.
 
@@ -137,6 +142,9 @@ def tool(
             arguments.
         name: Tool name; defaults to the function name.
         description: Tool description; defaults to the function's docstring.
+        snapshot: When True, the assistant snapshots the tool's `path`
+            argument into its undo log before the tool runs. Set on
+            file-mutating tools so /undo can restore them.
 
     Returns:
         A Tool, or the decorator itself when called as `@tool(...)`.
@@ -148,6 +156,7 @@ def tool(
             description=description or (inspect.getdoc(f) or ""),
             parameters=schema_from_signature(f),
             fn=f,
+            snapshot=snapshot,
         )
 
     if fn is None:
