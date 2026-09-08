@@ -138,7 +138,8 @@ whole framework — everything below is just composition.
 
 Inside the REPL: `/help` for commands, `/compact` to summarize the old
 conversation right away (reducing the context without waiting for the budget),
-`/undo` to revert the last turn (files and conversation), `Ctrl+D` to exit. A
+`/undo` to revert the last turn (files and conversation), `/transcript [path]`
+to write the conversation to a JSONL file, `Ctrl+D` to exit. A
 status line always shows the current context usage
 (e.g. `context: 3.4k / 8.2k tok · 21 messages · 41%`): under the input while
 waiting, and through the whole turn — under the live views and after every
@@ -223,8 +224,11 @@ one agent with a few tools, and that's exactly what Radix supports too.
 | `read_file` | Read a text file's lines (UTF-8) with `offset`/`limit` paging (default 1000 lines); when lines remain it reports the range shown and how many are left so the agent can page further. |
 | `edit_file` | Replace one exact, unique snippet — returns a unified diff.           |
 | `write_file`| Create or overwrite a file, creating parent directories as needed.    |
+| `grep` | Search file contents with a regex; returns `file:line: text`, skipping binaries and hidden directories (read-only). |
 | `run_shell` | Run a shell command (default 120s timeout, default 500-line output cap, both agent-configurable; a footer reports cut lines). |
 | `fetch_url` | Fetch a web page (default 30s timeout, default 500-line body cap, both agent-configurable; a footer reports cut lines). |
+| `remember` | Append a timestamped note to `.radix/notes.md` (persistent across sessions). |
+| `recall` | Search the notes for a substring and return the matching lines. |
 
 Whether any of these prompt for approval is the permission gate's decision,
 not the tool's: with the default gate every call asks; with `AutoApproveGate`
@@ -415,7 +419,7 @@ radix/
 ├── tool.py         # @tool decorator + schema generation
 ├── messages.py     # Message & result types
 ├── undo.py         # Per-turn file snapshots for /undo
-└── builtin/        # read_file, edit_file, write_file, run_shell, fetch_url
+└── builtin/        # read_file, edit_file, write_file, grep, remember, recall, run_shell, fetch_url
 ```
 
 - **Streaming everywhere.** Answers stream token by token; tool calls stream too.
