@@ -1,21 +1,49 @@
 from __future__ import annotations
 
 import os
+import stat
 import tempfile
 from dataclasses import dataclass, field
 
 
 # Undo: snapshots file state per assistant turn so Assistant.undo() can
 # restore changes and rewind the conversation to the right depth.
+def _target_mode(path: str) -> int:
+    """The permission mode a write to `path` should end up with.
+
+    Existing files keep their mode; new files get what a plain
+    `open(path, "w")` would create (0666 masked by the process umask).
+    Ownership is not preserved (that would require root).
+
+    Args:
+        path: Target file path.
+
+    Returns:
+        The permission bits (mode & 0o777) to apply to the written file.
+    """
+    try:
+        return stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        umask = os.umask(0)
+        os.umask(umask)
+        return 0o666 & ~umask
+
+
 def _write_atomic(path: str, content: str) -> None:
     """Write `content` to `path` atomically (write temp file, then rename).
+
+    The target's permission mode is preserved: existing files keep their
+    mode, new files get the default 0666 masked by the umask. Ownership is
+    not preserved (that would require root).
 
     Args:
         path: Target file path.
         content: Text to write.
     """
+    mode = _target_mode(path)
     fd, tmp_path = tempfile.mkstemp(dir=os.path.dirname(os.path.abspath(path)) or ".")
     try:
+        os.fchmod(fd, mode)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         os.replace(tmp_path, path)

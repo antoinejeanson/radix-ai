@@ -1,4 +1,5 @@
 import json
+import os
 
 from fakes import ScriptedClient
 from radix import Agent, Assistant, AutoApproveGate
@@ -317,3 +318,111 @@ def test_assistant_reset_clears_undo_log(tmp_path):
     assert len(assistant.undo_log) == 0
     assert assistant.undo().restored == []
     assert path.read_text() == "v1"
+
+
+def _mode(path):
+    return os.stat(path).st_mode & 0o777
+
+
+def test_write_atomic_preserves_existing_mode(tmp_path):
+    from radix.undo import _write_atomic
+
+    path = tmp_path / "a.txt"
+    path.write_text("before")
+    os.chmod(path, 0o640)
+    _write_atomic(str(path), "after")
+    assert path.read_text() == "after"
+    assert _mode(path) == 0o640
+
+
+def test_write_atomic_preserves_0600(tmp_path):
+    from radix.undo import _write_atomic
+
+    path = tmp_path / "secret.txt"
+    path.write_text("before")
+    os.chmod(path, 0o600)
+    _write_atomic(str(path), "after")
+    assert _mode(path) == 0o600
+
+
+def test_write_atomic_new_file_uses_umask_default(tmp_path):
+    from radix.undo import _write_atomic
+
+    path = tmp_path / "new.txt"
+    old = os.umask(0o022)
+    try:
+        _write_atomic(str(path), "hello")
+    finally:
+        os.umask(old)
+    assert path.read_text() == "hello"
+    assert _mode(path) == 0o644
+
+
+def test_write_atomic_new_file_respects_umask(tmp_path):
+    from radix.undo import _write_atomic
+
+    path = tmp_path / "new.txt"
+    old = os.umask(0o077)
+    try:
+        _write_atomic(str(path), "hello")
+    finally:
+        os.umask(old)
+    assert _mode(path) == 0o600
+
+
+def test_edit_file_preserves_mode(tmp_path):
+    path = tmp_path / "a.txt"
+    path.write_text("hello world")
+    os.chmod(path, 0o640)
+    out = edit_file.run(path=str(path), old_string="world", new_string="radix")
+    assert not out.startswith("Error")
+    assert path.read_text() == "hello radix"
+    assert _mode(path) == 0o640
+
+
+def test_write_file_new_mode_and_edit_preserves(tmp_path):
+    path = tmp_path / "b.txt"
+    old = os.umask(0o022)
+    try:
+        out = write_file.run(path=str(path), content="v0")
+    finally:
+        os.umask(old)
+    assert not out.startswith("Error")
+    assert _mode(path) == 0o644
+    os.chmod(path, 0o604)
+    out = edit_file.run(path=str(path), old_string="v0", new_string="v1")
+    assert not out.startswith("Error")
+    assert _mode(path) == 0o604
+
+
+def test_undo_restore_preserves_mode(tmp_path):
+    path = tmp_path / "c.txt"
+    path.write_text("v0")
+    os.chmod(path, 0o640)
+    log = UndoLog()
+    log.begin_turn(0)
+    log.snapshot(str(path))
+    path.write_text("v1")
+    result = log.undo()
+    assert result.restored == [str(path)]
+    assert path.read_text() == "v0"
+    assert _mode(path) == 0o640
+
+
+def test_undo_restore_deleted_file_default_mode(tmp_path):
+    # A file that existed, was snapshotted, then deleted during the turn:
+    # undo recreates it, so it gets the default (umask) mode.
+    path = tmp_path / "d.txt"
+    path.write_text("v0")
+    old = os.umask(0o022)
+    try:
+        log = UndoLog()
+        log.begin_turn(0)
+        log.snapshot(str(path))  # exists with content
+        path.unlink()  # deleted during the turn
+        result = log.undo()
+    finally:
+        os.umask(old)
+    assert result.restored == [str(path)]
+    assert path.read_text() == "v0"
+    assert _mode(path) == 0o644
