@@ -197,14 +197,19 @@ class Agent:
         can quote prior tool work. The leading system prompt is dropped
         (it is re-added at send time), and the final assistant answer is
         appended when it is not already the last message (i.e. the final
-        round produced a plain answer with no tool call).
+        round produced a plain answer with no tool call). A compaction
+        summary message (also role "system") is kept: the leading message
+        is dropped only when it is the agent's own system prompt, which
+        exists exactly when `self.system_prompt` is set.
 
         Args:
             prepared: The last message list the model saw, system prompt
                 first (if any).
             answer: The agent's final answer.
         """
-        has_system = bool(prepared) and prepared[0].get("role") == "system"
+        has_system = bool(
+            self.system_prompt and prepared and prepared[0].get("role") == "system"
+        )
         memory = prepared[1:] if has_system else list(prepared)
         if not memory or memory[-1].get("role") != "assistant":
             memory.append(assistant_message(answer))

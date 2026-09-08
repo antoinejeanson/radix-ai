@@ -348,3 +348,85 @@ def test_compact_noop_without_context_or_state():
     agent.run("hello")
 
     assert agent.compact() is False
+
+
+def test_stateful_no_system_prompt_keeps_summary():
+    # Regression: a stateful agent with NO system prompt used to drop the
+    # compaction summary from its history, because _remember assumed the
+    # leading system-role message was the (absent) system prompt.
+    client = ScriptedClient(
+        [
+            ChatResult(content="SUMMARY TEXT"),  # consumed by compact's _summarize
+            ChatResult(content="final answer"),  # consumed by the chat round
+        ]
+    )
+    context = ContextManager(
+        client,
+        max_context_tokens=40,  # tiny budget -> compaction fires
+        reserve_output_tokens=0,
+        keep_recent=2,
+        keep_recent_turns=1,
+    )
+    agent = Agent(
+        "tester",
+        client=client,
+        context=context,
+        stateful=True,
+        permission_gate=AutoApproveGate(),
+    )
+    agent.history = [
+        {"role": "user", "content": "q1 " + "x" * 30},
+        {"role": "assistant", "content": "a1 " + "y" * 30},
+        {"role": "user", "content": "q2 " + "z" * 30},
+        {"role": "assistant", "content": "a2 " + "w" * 30},
+    ]
+    assert agent.run("new task") == "final answer"
+
+    summary_msgs = [
+        m
+        for m in agent.history
+        if m.get("role") == "system" and "SUMMARY TEXT" in (m.get("content") or "")
+    ]
+    assert summary_msgs, f"summary dropped from history: {agent.history}"
+    # The final answer is still appended after the summary.
+    assert agent.history[-1] == {"role": "assistant", "content": "final answer"}
+
+
+def test_stateful_system_prompt_keeps_summary_and_no_dup():
+    # With a system prompt, the summary is kept AND the system prompt is
+    # not duplicated into the history.
+    client = ScriptedClient(
+        [
+            ChatResult(content="SUMMARY TEXT"),
+            ChatResult(content="final answer"),
+        ]
+    )
+    context = ContextManager(
+        client,
+        max_context_tokens=40,
+        reserve_output_tokens=0,
+        keep_recent=2,
+        keep_recent_turns=1,
+    )
+    agent = Agent(
+        "tester",
+        system_prompt="be brief",
+        client=client,
+        context=context,
+        stateful=True,
+        permission_gate=AutoApproveGate(),
+    )
+    agent.history = [
+        {"role": "user", "content": "q1 " + "x" * 30},
+        {"role": "assistant", "content": "a1 " + "y" * 30},
+        {"role": "user", "content": "q2 " + "z" * 30},
+        {"role": "assistant", "content": "a2 " + "w" * 30},
+    ]
+    assert agent.run("new task") == "final answer"
+
+    # No system prompt leaked into the persisted history.
+    assert not any(m.get("content") == "be brief" for m in agent.history), agent.history
+    # The summary survived compaction.
+    assert any("SUMMARY TEXT" in (m.get("content") or "") for m in agent.history), (
+        agent.history
+    )
