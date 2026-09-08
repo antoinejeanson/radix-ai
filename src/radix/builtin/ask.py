@@ -7,11 +7,13 @@ from ..tool import tool
 # Built-in interactive tool: ask_question presents a question with numbered
 # choices to the user and returns their selection (or custom text).
 
+# Module-level input function. Kept out of the tool signature so it does not
+# leak into the model-facing schema; tests override it directly.
+input_fn: Callable[[str], str] = input
+
 
 @tool
-def ask_question(
-    question: str, choices: list[str], input_fn: Callable[[str], str] | None = None
-) -> str:
+def ask_question(question: str, choices: list[str]) -> str:
     """Ask the user a question with selectable choices.
 
     Displays the question and a numbered list of choices. The user may
@@ -21,16 +23,11 @@ def ask_question(
     Args:
         question: The question to ask the user.
         choices: The list of selectable choices to present.
-        input_fn: Optional callable that takes a prompt string and
-            returns user input. When provided, it is used instead of
-            ``input()`` (useful for testing).
 
     Returns:
         The user's answer as a string — either the text of the selected
         choice, or their custom text if they typed something else.
     """
-    if input_fn is None:
-        input_fn = input
     print(f"\n{question}")
     for i, choice in enumerate(choices, 1):
         print(f"  {i}. {choice}")
