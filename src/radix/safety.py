@@ -96,7 +96,7 @@ _NEGATION_RE = re.compile(
     r"\b(?:"
     r"NOT|NO|NEVER|ISN'T|IS NOT|AREN'T|ARE NOT|DON'T|DO NOT|WON'T|WILL NOT|"
     r"CAN'T|CANNOT|SHOULDN'T|SHOULD NOT|MUST NOT|MUSTN'T"
-    r")\s+\Z"
+    r")\s*$"
 )
 
 

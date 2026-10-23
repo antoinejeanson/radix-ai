@@ -66,6 +66,8 @@ def read_file(path: str, offset: int = 0, limit: int = DEFAULT_MAX_READ_LINES) -
             f"[Showing lines {offset + 1}-{offset + len(selected)} of {total}]\n"
             f"{content}[{total - offset - len(selected)} more lines remain]"
         )
+    if total - offset - len(selected) > 0:
+        return f"{content}[{total - offset - len(selected)} more lines remain]"
     return content
 
 

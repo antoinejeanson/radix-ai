@@ -179,8 +179,8 @@ class ContextManager:
             messages[0] if messages and messages[0].get("role") == "system" else None
         )
         body = messages[1:] if system else list(messages)
-        if len(body) <= self.keep_recent:
-            return messages
+        # Always attempt compaction per the documented behavior, even when
+        # the conversation fits within the token budget.
 
         cut = self._recent_cut(body)
         if cut <= 0:
